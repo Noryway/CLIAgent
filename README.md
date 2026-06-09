@@ -12,7 +12,7 @@
 | Day 0 | ✅ | 项目脚手架 + DeepSeek API 调通 |
 | Day 1 | ✅ | `LlmClient` / `DeepSeekClient` / `EnvConfig`，四种 message role + Tool Call 序列化/解析 |
 | Day 2 | ✅ | `ToolRegistry` + 5 个内置工具 + 单元测试 |
-| Day 3 | ⏳ | `Agent.run()` ReAct 循环 |
+| Day 3 | ✅ | `Agent.run()` ReAct 循环 + Main 集成 |
 | Day 4 | ⏳ | 交互式 CLI（clear / exit / REPL） |
 
 ## 功能概览
@@ -22,9 +22,10 @@
 - **Tool Call**：请求体序列化 `tools` + `tool_calls`，响应解析 `tool_calls`
 - **配置加载**：`-D` 系统属性 > 环境变量 > `./.env`
 - **ToolRegistry**：注册、执行、导出 5 个内置工具定义
-- **单元测试**：LLM 协议测试 + 工具执行测试（不依赖 API Key）
+- **ReAct Agent**：`Agent.run()` 自动 chat → 执行工具 → 再 chat，直到 LLM 返回纯文本
+- **单元测试**：LLM 协议 + 工具 + Agent Mock 测试（不依赖 API Key）
 
-> Day 3 尚未实现：ReAct 循环、`Main` 自动执行 tool_calls、交互式多轮对话。
+> Day 4 尚未实现：交互式 REPL 多轮对话（`clear` / `exit`）。
 
 ### 内置工具（Day 2）
 
@@ -56,11 +57,12 @@ cp .env.example .env
 # 3. 编译、测试、打包
 mvn clean package
 
-# 4. 普通对话（system + user → assistant 文本）
+# 4. 普通对话
 java -jar target/CLIAgent-1.0-SNAPSHOT.jar "用一句话介绍 ReAct"
 
-# 5. 演示 Tool Call（注册 get_current_time，观察 LLM 是否返回 tool_calls）
-java -jar target/CLIAgent-1.0-SNAPSHOT.jar --demo-tool "现在几点？"
+# 5. ReAct + 工具（自动 list_dir / read_file 等）
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar "列出当前目录有哪些文件"
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar "读取 README.md 并用一句话总结"
 ```
 
 ### 预期输出
@@ -70,20 +72,15 @@ java -jar target/CLIAgent-1.0-SNAPSHOT.jar --demo-tool "现在几点？"
 ```text
 you> 用一句话介绍 ReAct
 assistant> ReAct 是一种结合推理与行动的智能体框架...
-tokens: input=22 output=47
 ```
 
-**Tool Call 演示（LLM 决定调工具时）：**
+**ReAct + 工具：**
 
 ```text
-you> 现在几点？
-(demo: 已注册 get_current_time 工具，观察 LLM 是否返回 tool_calls)
-assistant> (请求调用工具，Day 2 将在 ToolRegistry 中真正执行)
-  tool_call id=call_xxx name=get_current_time args={}
-tokens: input=... output=...
+you> 列出当前目录有哪些文件
+  [tool] list_dir → 目录内容 (.): [D] src [F] pom.xml [F] README.md ...
+assistant> 当前目录包含 src、pom.xml、README.md 等文件和目录。
 ```
-
-> `--demo-tool` 仍使用 Main 内手写 demo 工具；Day 3 将改为 `ToolRegistry.getToolDefinitions()` 并真正 `executeTool`。
 
 ## 项目结构
 
@@ -97,6 +94,8 @@ CLIAgent/
 └── src/
     ├── main/java/com/cliagent/
     │   ├── Main.java
+    │   ├── agent/
+    │   │   └── Agent.java
     │   ├── config/
     │   │   └── EnvConfig.java
     │   ├── llm/
@@ -107,6 +106,8 @@ CLIAgent/
     │       ├── ToolExecutor.java
     │       └── ToolRegistry.java
     └── test/java/com/cliagent/
+        ├── agent/
+        │   └── AgentTest.java
         ├── llm/
         │   ├── MessageTest.java
         │   └── DeepSeekClientTest.java
@@ -114,28 +115,16 @@ CLIAgent/
             └── ToolRegistryTest.java
 ```
 
-**后续规划：**
-
-```text
-src/main/java/com/cliagent/agent/
-└── Agent.java            # Day 3：ReAct 主循环
-```
-
 ## 架构
 
 ```text
-Main（Day 1）
+Main
   ├── EnvConfig
-  ├── DeepSeekClient.chat(messages, tools)
-  └── --demo-tool 演示 tool_calls 解析
-
-ToolRegistry（Day 2）
-  ├── registerBuiltinTools()     5 个内置工具
-  ├── getToolDefinitions()       → List<LlmClient.Tool> 发给 LLM
-  └── executeTool(name, argsJson) → 执行并返回字符串
-
-Agent（Day 3 规划）
-  history → chat → hasToolCalls? → executeTool → Message.tool → 再 chat
+  ├── ToolRegistry（5 内置工具）
+  └── Agent.run(userInput)
+        └── while: chat(history, tools)
+              → hasToolCalls? executeTool → Message.tool → continue
+              → else return 最终答案
 ```
 
 ## 配置说明
@@ -163,8 +152,8 @@ Agent（Day 3 规划）
 # 跑全部测试（LLM 协议 + 工具）
 mvn test
 
-# 只跑工具测试（不需要 API Key）
-mvn test -Dtest=ToolRegistryTest
+# 只跑 Agent 测试
+mvn test -Dtest=AgentTest
 
 # 跳过测试打包
 mvn clean package -DskipTests
@@ -184,7 +173,7 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 | `tool` 消息带 `tool_call_id` | ✅ | 与 assistant 的 `tool_calls[i].id` 配对 |
 | ToolRegistry 注册表模式 | ✅ | 加工具只改 register + 实现方法 |
 | 工具执行异常转字符串 | ✅ | 不抛给 LLM，便于 ReAct 继续 |
-| ReAct 循环 | ⏳ | Day 3 |
+| ReAct 循环 | ✅ | `Agent.run()` + `MAX_ITERATIONS` 防死循环 |
 | 流式 SSE | ⏳ | 进阶项 |
 
 ## License
