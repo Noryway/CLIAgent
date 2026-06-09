@@ -39,8 +39,10 @@ public class Main {
         DeepSeekClient client = new DeepSeekClient(apiKey, model);
 
         boolean demoTool = args.length > 0 && "--demo-tool".equals(args[0]);
+        //解析用户输入
         String userInput = resolveUserInput(args, demoTool);
 
+        //创建消息列表
         List<Message> messages = new ArrayList<>();
         messages.add(Message.system("你是 CLIAgent，一个简洁的 Java 编程助手。"));
         messages.add(Message.user(userInput));

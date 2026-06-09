@@ -10,13 +10,18 @@ import java.util.List;
  */
 public interface LlmClient {
 
+    //发送消息给LLM，并返回响应
     ChatResponse chat(List<Message> messages, List<Tool> tools) throws IOException;
 
     String getModelName();
 
     /**
      * 对话消息，支持 system / user / assistant / tool 四种 role。
-     */
+     * system: 系统消息，用于设置LLM的上下文
+     * user: 用户消息，用于发送用户输入
+     * assistant: 助手消息，用于接收LLM的响应
+     * tool: 工具消息，用于调用工具
+     */ 
     record Message(String role, String content, List<ToolCall> toolCalls, String toolCallId) {
 
         public static Message system(String content) {

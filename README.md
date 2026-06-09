@@ -11,7 +11,7 @@
 |------|------|----------|
 | Day 0 | ✅ | 项目脚手架 + DeepSeek API 调通 |
 | Day 1 | ✅ | `LlmClient` / `DeepSeekClient` / `EnvConfig`，四种 message role + Tool Call 序列化/解析 |
-| Day 2 | ⏳ | `ToolRegistry` + 5 个内置工具 |
+| Day 2 | ✅ | `ToolRegistry` + 5 个内置工具 + 单元测试 |
 | Day 3 | ⏳ | `Agent.run()` ReAct 循环 |
 | Day 4 | ⏳ | 交互式 CLI（clear / exit / REPL） |
 
@@ -21,9 +21,20 @@
 - **四种消息角色**：`system` / `user` / `assistant` / `tool`
 - **Tool Call**：请求体序列化 `tools` + `tool_calls`，响应解析 `tool_calls`
 - **配置加载**：`-D` 系统属性 > 环境变量 > `./.env`
-- **单元测试**：Message 工厂方法 + 序列化/反序列化测试
+- **ToolRegistry**：注册、执行、导出 5 个内置工具定义
+- **单元测试**：LLM 协议测试 + 工具执行测试（不依赖 API Key）
 
-> Day 1 尚未实现：ReAct 循环、工具真正执行、交互式多轮对话。
+> Day 3 尚未实现：ReAct 循环、`Main` 自动执行 tool_calls、交互式多轮对话。
+
+### 内置工具（Day 2）
+
+| 工具 | 说明 |
+|------|------|
+| `list_dir` | 列出目录内容（`[D]` / `[F]`） |
+| `read_file` | 读文件，支持 `offset` / `limit`，最多 2000 行 |
+| `write_file` | 写文件，自动创建父目录 |
+| `execute_command` | 执行 shell（60s 超时，输出最多 8KB） |
+| `create_project` | 创建项目骨架（`java` / `python` / `node`） |
 
 ## 环境要求
 
@@ -35,7 +46,7 @@
 
 ```bash
 # 1. 克隆并进入项目
-git clone https://github.com/Noryway/CLIAgent.git
+git clone git@github.com:Noryway/CLIAgent.git
 cd CLIAgent
 
 # 2. 配置 API Key
@@ -72,6 +83,8 @@ assistant> (请求调用工具，Day 2 将在 ToolRegistry 中真正执行)
 tokens: input=... output=...
 ```
 
+> `--demo-tool` 仍使用 Main 内手写 demo 工具；Day 3 将改为 `ToolRegistry.getToolDefinitions()` 并真正 `executeTool`。
+
 ## 项目结构
 
 ```text
@@ -79,41 +92,50 @@ CLIAgent/
 ├── pom.xml
 ├── .env.example
 ├── README.md
+├── docs/
+│   └── SESSION-HANDOFF.md
 └── src/
     ├── main/java/com/cliagent/
-    │   ├── Main.java                 # 入口：组装 messages/tools，调用 LLM
+    │   ├── Main.java
     │   ├── config/
-    │   │   └── EnvConfig.java        # 配置三级加载
-    │   └── llm/
-    │       ├── LlmClient.java        # 接口 + Message/Tool/ToolCall/ChatResponse
-    │       └── DeepSeekClient.java   # OkHttp + JSON 序列化/解析
-    └── test/java/com/cliagent/llm/
-        ├── MessageTest.java
-        └── DeepSeekClientTest.java
+    │   │   └── EnvConfig.java
+    │   ├── llm/
+    │   │   ├── LlmClient.java
+    │   │   └── DeepSeekClient.java
+    │   └── tool/
+    │       ├── Tool.java
+    │       ├── ToolExecutor.java
+    │       └── ToolRegistry.java
+    └── test/java/com/cliagent/
+        ├── llm/
+        │   ├── MessageTest.java
+        │   └── DeepSeekClientTest.java
+        └── tool/
+            └── ToolRegistryTest.java
 ```
 
 **后续规划：**
 
 ```text
-src/main/java/com/cliagent/
-├── tool/
-│   ├── Tool.java
-│   └── ToolRegistry.java     # read_file / write_file / list_dir / ...
-└── agent/
-    └── Agent.java            # ReAct 主循环
+src/main/java/com/cliagent/agent/
+└── Agent.java            # Day 3：ReAct 主循环
 ```
 
 ## 架构
 
 ```text
-Main
-  ├── EnvConfig          读取 DEEPSEEK_API_KEY / DEEPSEEK_MODEL
-  ├── List<Message>      system + user（Day 3 起维护完整 history）
-  ├── List<Tool>         可选工具定义（--demo-tool）
-  └── DeepSeekClient.chat(messages, tools)
-        ├── buildRequestBody()   Java → JSON（四种 role + tools）
-        ├── OkHttp POST          → api.deepseek.com/chat/completions
-        └── parseResponse()      JSON → ChatResponse（content / tool_calls）
+Main（Day 1）
+  ├── EnvConfig
+  ├── DeepSeekClient.chat(messages, tools)
+  └── --demo-tool 演示 tool_calls 解析
+
+ToolRegistry（Day 2）
+  ├── registerBuiltinTools()     5 个内置工具
+  ├── getToolDefinitions()       → List<LlmClient.Tool> 发给 LLM
+  └── executeTool(name, argsJson) → 执行并返回字符串
+
+Agent（Day 3 规划）
+  history → chat → hasToolCalls? → executeTool → Message.tool → 再 chat
 ```
 
 ## 配置说明
@@ -138,13 +160,16 @@ Main
 ## 开发
 
 ```bash
-# 只跑测试
+# 跑全部测试（LLM 协议 + 工具）
 mvn test
+
+# 只跑工具测试（不需要 API Key）
+mvn test -Dtest=ToolRegistryTest
 
 # 跳过测试打包
 mvn clean package -DskipTests
 
-# 开发态直接运行（需先 mvn compile）
+# 开发态直接运行
 mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 ```
 
@@ -155,9 +180,11 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 | `OkHttpClient` 全局单例 | ✅ | 复用连接池，避免线程/端口泄漏 |
 | `ObjectMapper` 全局单例 | ✅ | 线程安全，构造成本高 |
 | 四种 message role | ✅ | `LlmClient.Message` 工厂方法 |
-| `arguments` 必须是 JSON 字符串 | ✅ | OpenAI 协议要求，防模型输出非法 JSON 拖垮整包 |
+| `arguments` 必须是 JSON 字符串 | ✅ | OpenAI 协议要求 |
 | `tool` 消息带 `tool_call_id` | ✅ | 与 assistant 的 `tool_calls[i].id` 配对 |
-| ReAct 循环 + 工具执行 | ⏳ | Day 2–3 |
+| ToolRegistry 注册表模式 | ✅ | 加工具只改 register + 实现方法 |
+| 工具执行异常转字符串 | ✅ | 不抛给 LLM，便于 ReAct 继续 |
+| ReAct 循环 | ⏳ | Day 3 |
 | 流式 SSE | ⏳ | 进阶项 |
 
 ## License

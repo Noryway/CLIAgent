@@ -18,6 +18,7 @@ public final class EnvConfig {
     }
 
     public static String get(String key, String defaultValue) {
+        // 读取 -D 传入的值
         String fromProp = System.getProperty(key);
         if (fromProp != null && !fromProp.isBlank()) {
             return fromProp.trim();
@@ -35,9 +36,11 @@ public final class EnvConfig {
                 String prefix = key + "=";
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
+                    //如果行是空或者以#开头，则跳过
                     if (line.isEmpty() || line.startsWith("#")) {
                         continue;
                     }
+                    //如果行以key=开头，则获取value
                     if (line.startsWith(prefix)) {
                         String value = stripQuotes(line.substring(prefix.length()).trim());
                         return value.isBlank() ? defaultValue : value;
@@ -55,6 +58,7 @@ public final class EnvConfig {
         return value == null || value.isBlank() ? null : value;
     }
 
+    //支持单引号和双引号 如：DEEPSEEK_API_KEY="sk-xxx" 或 DEEPSEEK_API_KEY='sk-xxx'
     private static String stripQuotes(String value) {
         if (value.length() >= 2
                 && ((value.startsWith("\"") && value.endsWith("\""))

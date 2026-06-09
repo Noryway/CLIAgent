@@ -56,12 +56,12 @@ public class DeepSeekClient implements LlmClient {
                 .build();
 
         try (Response response = HTTP.newCall(request).execute()) {
-            ResponseBody respBody = response.body();
-            String raw = respBody == null ? "" : respBody.string();
-            if (!response.isSuccessful()) {
+            ResponseBody respBody = response.body();//取出响应体
+            String raw = respBody == null ? "" : respBody.string();//将响应体转换为字符串
+            if (!response.isSuccessful()) {//如果响应不成功，则抛出异常
                 throw new IOException("HTTP " + response.code() + ": " + raw);
             }
-            return parseResponse(raw);
+            return parseResponse(raw); //解析响应
         }
     }
 
@@ -116,13 +116,43 @@ public class DeepSeekClient implements LlmClient {
         return requestBody;
     }
 
+    /** 
+     * OpenAI 兼容协议的响应格式
+     * {
+            "choices": [{
+                "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_xyz",
+                    "type": "function",
+                    "function": {
+                    "name": "get_current_time",
+                    "arguments": "{}"
+                    }
+                }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5
+            }
+        }
+     * 
+     * 
+    */
+
     ChatResponse parseResponse(String raw) throws IOException {
         JsonNode root = MAPPER.readTree(raw);
+        //path("choices"):获取choices节点
+        //path(0):获取choices节点的第一个元素
+        //path("message"):获取message节点
         JsonNode message = root.path("choices").path(0).path("message");
-
+        //asText("assistant"):获取role节点的值，如果为空，则返回"assistant"
         String role = message.path("role").asText("assistant");
         String content = message.path("content").isNull() ? null : message.path("content").asText(null);
-
+        //tool_calls
         List<ToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
 
         JsonNode usage = root.path("usage");
