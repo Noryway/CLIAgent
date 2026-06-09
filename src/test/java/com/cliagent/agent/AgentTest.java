@@ -33,6 +33,45 @@ class AgentTest {
     }
 
     @Test
+    void multipleRunsAccumulateHistory() throws IOException {
+        Agent agent = new Agent(new SingleReplyLlm("第一轮"), new ToolRegistry());
+        agent.run("我叫小明");
+        agent.run("1+1等于几");
+
+        List<Message> history = agent.getHistory();
+        assertEquals(5, history.size());
+        assertEquals("system", history.get(0).role());
+        assertEquals("user", history.get(1).role());
+        assertEquals("assistant", history.get(2).role());
+        assertEquals("user", history.get(3).role());
+        assertEquals("assistant", history.get(4).role());
+    }
+
+    @Test
+    void clearHistoryForgotsPriorConversation() throws IOException {
+        Agent agent = new Agent(new MemoryCheckLlm(), new ToolRegistry());
+        agent.run("我叫小明");
+        assertEquals("你叫小明。", agent.run("我叫什么？"));
+
+        agent.clearHistory();
+        assertEquals("我不知道你的名字。", agent.run("我叫什么？"));
+    }
+
+    @Test
+    void clearHistoryKeepsOnlySystemMessage() throws IOException {
+        Agent agent = new Agent(new SingleReplyLlm("你好"), new ToolRegistry());
+        agent.run("我叫小明");
+
+        assertTrue(agent.getHistory().size() > 1);
+
+        agent.clearHistory();
+
+        List<Message> history = agent.getHistory();
+        assertEquals(1, history.size());
+        assertEquals("system", history.get(0).role());
+    }
+
+    @Test
     void reactLoopExecutesToolThenReturnsFinalAnswer() throws IOException {
         Agent agent = new Agent(new TwoRoundLlm(), new ToolRegistry());
         String answer = agent.run("列出当前目录");
@@ -47,6 +86,24 @@ class AgentTest {
         assertEquals("call_test_1", history.get(3).toolCallId());
         assertTrue(history.get(3).content().startsWith("目录内容"));
         assertEquals("assistant", history.get(4).role());
+    }
+
+    /** 根据 history 里是否出现过「小明」决定能否回答名字 */
+    private static final class MemoryCheckLlm implements LlmClient {
+        @Override
+        public ChatResponse chat(List<Message> messages, List<Tool> tools) {
+            boolean knowsName = messages.stream()
+                    .anyMatch(m -> "user".equals(m.role())
+                            && m.content() != null
+                            && m.content().contains("小明"));
+            String reply = knowsName ? "你叫小明。" : "我不知道你的名字。";
+            return new ChatResponse("assistant", reply, List.of(), 10, 5);
+        }
+
+        @Override
+        public String getModelName() {
+            return "stub-memory";
+        }
     }
 
     /** 单轮：直接返回文本，无 tool_calls */

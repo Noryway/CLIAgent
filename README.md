@@ -13,7 +13,7 @@
 | Day 1 | ✅ | `LlmClient` / `DeepSeekClient` / `EnvConfig`，四种 message role + Tool Call 序列化/解析 |
 | Day 2 | ✅ | `ToolRegistry` + 5 个内置工具 + 单元测试 |
 | Day 3 | ✅ | `Agent.run()` ReAct 循环 + Main 集成 |
-| Day 4 | ⏳ | 交互式 CLI（clear / exit / REPL） |
+| Day 4 | ✅ | 交互式 REPL（多轮对话 / clear / exit） |
 
 ## 功能概览
 
@@ -23,9 +23,8 @@
 - **配置加载**：`-D` 系统属性 > 环境变量 > `./.env`
 - **ToolRegistry**：注册、执行、导出 5 个内置工具定义
 - **ReAct Agent**：`Agent.run()` 自动 chat → 执行工具 → 再 chat，直到 LLM 返回纯文本
-- **单元测试**：LLM 协议 + 工具 + Agent Mock 测试（不依赖 API Key）
-
-> Day 4 尚未实现：交互式 REPL 多轮对话（`clear` / `exit`）。
+- **交互式 REPL**：无参数启动进入多轮对话；支持 `exit` / `quit` 退出、`clear` / `/clear` 清空历史
+- **单元测试**：LLM 协议 + 工具 + Agent + REPL 命令 Mock 测试（不依赖 API Key）
 
 ### 内置工具（Day 2）
 
@@ -57,17 +56,43 @@ cp .env.example .env
 # 3. 编译、测试、打包
 mvn clean package
 
-# 4. 普通对话
+# 4. REPL 交互模式（推荐，多轮对话）
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar
+
+# 5. 单次对话（带参数，兼容脚本调用）
 java -jar target/CLIAgent-1.0-SNAPSHOT.jar "用一句话介绍 ReAct"
 
-# 5. ReAct + 工具（自动 list_dir / read_file 等）
+# 6. ReAct + 工具（自动 list_dir / read_file 等）
 java -jar target/CLIAgent-1.0-SNAPSHOT.jar "列出当前目录有哪些文件"
 java -jar target/CLIAgent-1.0-SNAPSHOT.jar "读取 README.md 并用一句话总结"
 ```
 
+### REPL 命令
+
+| 命令 | 作用 |
+|------|------|
+| `exit` / `quit` | 退出程序 |
+| `clear` / `/clear` | 清空对话历史（保留 system 提示词） |
+| 空行 | 跳过，不调用 API |
+| 其他输入 | 发送给 Agent，进入 ReAct 循环 |
+
 ### 预期输出
 
-**普通对话：**
+**REPL 多轮对话：**
+
+```text
+CLIAgent 已启动，输入 exit 退出，clear 清空对话。
+you> 我叫小明
+assistant> 你好小明！...
+you> 我叫什么？
+assistant> 你叫小明。
+you> clear
+🗑️ 对话历史已清空。
+you> exit
+再见！
+```
+
+**单次对话：**
 
 ```text
 you> 用一句话介绍 ReAct
@@ -106,6 +131,7 @@ CLIAgent/
     │       ├── ToolExecutor.java
     │       └── ToolRegistry.java
     └── test/java/com/cliagent/
+        ├── MainTest.java
         ├── agent/
         │   └── AgentTest.java
         ├── llm/
@@ -119,12 +145,15 @@ CLIAgent/
 
 ```text
 Main
+  ├── 无参数 → runRepl()：while 读 you> → exit/clear/对话
+  ├── 有参数 → runOnce()：单次 agent.run()
   ├── EnvConfig
   ├── ToolRegistry（5 内置工具）
-  └── Agent.run(userInput)
-        └── while: chat(history, tools)
+  └── Agent（history 跨 run 共享）
+        └── run(userInput): ReAct while 循环
               → hasToolCalls? executeTool → Message.tool → continue
               → else return 最终答案
+        └── clearHistory()：只保留 system 消息
 ```
 
 ## 配置说明
@@ -155,10 +184,16 @@ mvn test
 # 只跑 Agent 测试
 mvn test -Dtest=AgentTest
 
+# 只跑 REPL 命令解析测试
+mvn test -Dtest=MainTest
+
 # 跳过测试打包
 mvn clean package -DskipTests
 
-# 开发态直接运行
+# 开发态 REPL
+mvn -q exec:java -Dexec.mainClass="com.cliagent.Main"
+
+# 开发态单次对话
 mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 ```
 
@@ -174,6 +209,9 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 | ToolRegistry 注册表模式 | ✅ | 加工具只改 register + 实现方法 |
 | 工具执行异常转字符串 | ✅ | 不抛给 LLM，便于 ReAct 继续 |
 | ReAct 循环 | ✅ | `Agent.run()` + `MAX_ITERATIONS` 防死循环 |
+| 多轮对话 history | ✅ | `Agent.history` 成员变量，跨 `run()` 共享 |
+| REPL 交互入口 | ✅ | `Main.runRepl()` + `BufferedReader` |
+| `clearHistory()` | ✅ | 清空历史，只保留 system |
 | 流式 SSE | ⏳ | 进阶项 |
 
 ## License

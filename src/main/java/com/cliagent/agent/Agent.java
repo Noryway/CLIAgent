@@ -74,6 +74,13 @@ public class Agent {
         System.out.printf("  [tool] %s → %s%n", toolName, preview);
     }
 
+    /** 清空对话历史，保留 system 消息。 */
+    public void clearHistory() {
+        Message systemMsg = history.get(0);
+        history.clear();
+        history.add(systemMsg);
+    }
+
     /** 供测试或调试查看当前 history */
     List<Message> getHistory() {
         return List.copyOf(history);
