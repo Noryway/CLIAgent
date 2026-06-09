@@ -17,9 +17,6 @@ public class Agent {
 
     private static final String DEFAULT_SYSTEM_PROMPT =
             "你是 CLIAgent，一个简洁的 Java 编程助手。可以使用工具读写文件、列目录、执行命令。";
-    
-    //最大迭代次数
-    private static final int MAX_ITERATIONS = 10;
 
     private final LlmClient llm;
     private final ToolRegistry registry;
@@ -36,10 +33,15 @@ public class Agent {
      */
     public String run(String userInput) throws IOException {
         history.add(Message.user(userInput));
-        
-        //ReAct 循环直到 LLM 返回纯文本或达到迭代上限。
-        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            //调用 LLM 获取响应
+        AgentBudget budget = AgentBudget.defaults();
+
+        while (true) {
+            AgentBudget.ExitReason exitReason = budget.check();
+            if (exitReason != AgentBudget.ExitReason.WITHIN_BUDGET) {
+                return budget.describeExit(exitReason);
+            }
+
+            budget.beginIteration();
             ChatResponse response = llm.chat(history, registry.getToolDefinitions());
 
             //如果响应有工具调用，则执行工具
@@ -54,16 +56,14 @@ public class Agent {
                     history.add(Message.tool(tc.id(), result));
                     printToolExecution(tc.function().name(), result);
                 }
-                continue;//继续循环,此时会带着llm调用工具的结果再进行一次chat，整个过程看llm如何决策。是否还需要调用工具。
+                budget.recordToolCalls(response.toolCalls());
+                continue;
             }
 
-            //如果响应没有工具调用，则将响应添加到历史记录中
             String answer = response.content() != null ? response.content() : "";
             history.add(Message.assistant(answer));
             return answer;
         }
-
-        return "超过最大迭代次数 (" + MAX_ITERATIONS + ")，已停止。";
     }
 
     private static void printToolExecution(String toolName, String result) {

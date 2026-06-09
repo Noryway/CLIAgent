@@ -72,6 +72,14 @@ class AgentTest {
     }
 
     @Test
+    void stagnationStopsRepeatedIdenticalToolCalls() throws IOException {
+        Agent agent = new Agent(new RepeatedToolLlm(), new ToolRegistry());
+        String answer = agent.run("一直列出当前目录");
+
+        assertEquals("检测到连续 3 轮重复的工具调用，疑似死循环，已停止。", answer);
+    }
+
+    @Test
     void reactLoopExecutesToolThenReturnsFinalAnswer() throws IOException {
         Agent agent = new Agent(new TwoRoundLlm(), new ToolRegistry());
         String answer = agent.run("列出当前目录");
@@ -122,6 +130,26 @@ class AgentTest {
         @Override
         public String getModelName() {
             return "stub-single";
+        }
+    }
+
+    /** 每轮都返回相同的 list_dir tool_call，用于触发停滞检测 */
+    private static final class RepeatedToolLlm implements LlmClient {
+        private int calls = 0;
+
+        @Override
+        public ChatResponse chat(List<Message> messages, List<Tool> tools) {
+            calls++;
+            ToolCall tc = new ToolCall(
+                    "call_repeat_" + calls,
+                    new ToolCall.Function("list_dir", "{\"path\":\".\"}")
+            );
+            return new ChatResponse("assistant", null, List.of(tc), 10, 5);
+        }
+
+        @Override
+        public String getModelName() {
+            return "stub-stagnation";
         }
     }
 
