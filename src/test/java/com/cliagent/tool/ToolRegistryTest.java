@@ -63,6 +63,7 @@ class ToolRegistryTest {
         Files.writeString(file, "line1\nline2\nline3\nline4\n");
 
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
         String args = "{\"path\":\"" + file.toString().replace("\\", "\\\\") + "\",\"offset\":\"2\",\"limit\":\"2\"}";
         String result = registry.executeTool("read_file", args);
 
@@ -91,6 +92,7 @@ class ToolRegistryTest {
         String args = "{\"path\":\"" + pathJson + "\",\"content\":\"hello\\nworld\"}";
 
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
         assertEquals("文件已写入: " + file, registry.executeTool("write_file", args));
         assertEquals("hello\nworld", Files.readString(file));
     }
@@ -102,6 +104,7 @@ class ToolRegistryTest {
         String pathJson = file.toString().replace("\\", "\\\\");
 
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
         registry.executeTool("write_file", "{\"path\":\"" + pathJson + "\",\"content\":\"new\"}");
         assertEquals("new", Files.readString(file));
     }
@@ -112,6 +115,7 @@ class ToolRegistryTest {
         String pathJson = file.toString().replace("\\", "\\\\");
 
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
         registry.executeTool("write_file", "{\"path\":\"" + pathJson + "\",\"content\":\"alpha\"}");
         String readResult = registry.executeTool("read_file", "{\"path\":\"" + pathJson + "\"}");
 
@@ -128,6 +132,7 @@ class ToolRegistryTest {
     void writeFileToExistingDirectoryReturnsMessage(@TempDir Path tempDir) {
         String pathJson = tempDir.toString().replace("\\", "\\\\");
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
         assertEquals("目标是目录，不能写入: " + tempDir, registry.executeTool("write_file",
                 "{\"path\":\"" + pathJson + "\",\"content\":\"x\"}"));
     }
@@ -160,6 +165,7 @@ class ToolRegistryTest {
         Path projectRoot = tempDir.resolve("demo-app");
         String nameJson = projectRoot.toString().replace("\\", "\\\\");
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
 
         String result = registry.executeTool("create_project",
                 "{\"name\":\"" + nameJson + "\",\"type\":\"java\"}");
@@ -175,6 +181,7 @@ class ToolRegistryTest {
         Path projectRoot = tempDir.resolve("py-demo");
         String nameJson = projectRoot.toString().replace("\\", "\\\\");
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
 
         registry.executeTool("create_project", "{\"name\":\"" + nameJson + "\",\"type\":\"python\"}");
 
@@ -187,6 +194,7 @@ class ToolRegistryTest {
         Path projectRoot = tempDir.resolve("bad-type");
         String nameJson = projectRoot.toString().replace("\\", "\\\\");
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
 
         assertEquals("不支持的项目类型: rust（支持 java/python/node）",
                 registry.executeTool("create_project", "{\"name\":\"" + nameJson + "\",\"type\":\"rust\"}"));
@@ -196,5 +204,32 @@ class ToolRegistryTest {
     void createProjectMissingNameReturnsMessage() {
         ToolRegistry registry = new ToolRegistry();
         assertEquals("项目名称不能为空", registry.executeTool("create_project", "{\"type\":\"java\"}"));
+    }
+
+    @Test
+    void readFileRejectsPathOutsideProjectRoot() {
+        ToolRegistry registry = new ToolRegistry();
+        String result = registry.executeTool("read_file", "{\"path\":\"../../etc/passwd\"}");
+        assertTrue(result.contains("路径越界"));
+    }
+
+    @Test
+    void executeCommandRejectsDangerousRmRf() {
+        ToolRegistry registry = new ToolRegistry();
+        String result = registry.executeTool("execute_command", "{\"command\":\"rm -rf /\"}");
+        assertEquals("策略拒绝: 禁止 rm -rf 删除全盘或用户目录", result);
+    }
+
+    @Test
+    void setProjectPathChangesSandboxRoot(@TempDir Path tempDir) throws Exception {
+        Path file = tempDir.resolve("inside.txt");
+        Files.writeString(file, "sandbox");
+
+        ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
+
+        String pathJson = file.toString().replace("\\", "\\\\");
+        String result = registry.executeTool("read_file", "{\"path\":\"" + pathJson + "\"}");
+        assertTrue(result.contains("sandbox"));
     }
 }

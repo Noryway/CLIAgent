@@ -35,6 +35,7 @@
 | Day 3 | ✅ | `Agent.run()` ReAct 循环 + Main 集成 | `feat: Day 3 — Agent ReAct loop` |
 | Day 4 | ✅ | REPL 多轮对话、`clear`/`exit`、`clearHistory()` | `feat: Day 4 — REPL...` |
 | Day 5 | ✅ | `AgentBudget` 停滞检测 + 硬轮数兜底 | `feat: Day 5 — AgentBudget...` |
+| Day 6 | ✅ | `PathGuard` + `CommandGuard` 策略围栏 | `feat: Day 6 — PathGuard...` |
 
 ### 当前架构（Day 5）
 
@@ -53,7 +54,7 @@ Main
 ### 已知缺口（对比 paicli，阶段 2 要补）
 
 - [x] 停滞检测（连续相同 tool+args 死循环）
-- [ ] PathGuard / CommandGuard（工具安全围栏）
+- [x] PathGuard / CommandGuard（工具安全围栏）
 - [ ] 命令解析器（`/` 未知命令不发给 LLM）
 - [ ] Token 统计与 `/context` 可观测
 - [ ] 流式 SSE 输出
@@ -69,7 +70,7 @@ Main
 | Day | 模块 | 新增文件 | 做完能干嘛 |
 |-----|------|----------|------------|
 | Day 5 | ✅ AgentBudget 停滞检测 | `agent/AgentBudget.java` | 连续 3 次相同工具调用自动停止 |
-| Day 6 | 策略围栏 | `policy/PathGuard.java`、`policy/CommandGuard.java` | 读写/命令限制在项目沙箱内 |
+| Day 6 | ✅ 策略围栏 | `policy/PathGuard.java`、`policy/CommandGuard.java` | 读写/命令限制在项目沙箱内 |
 | Day 7 | ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
 | Day 8 | Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
 | Day 9 | projectPath 显式化 | `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
@@ -196,13 +197,13 @@ public class CommandGuard {
 
 ### 任务清单
 
-- [ ] 创建 `PathGuard`、`CommandGuard`
-- [ ] `ToolRegistry` 增加 `setProjectPath(String)` / `getProjectPath()`
-- [ ] `list_dir` / `read_file` / `write_file` 路径经 PathGuard
-- [ ] `execute_command` 经 CommandGuard
-- [ ] 策略拒绝返回字符串（不抛给上层），LLM 可继续 ReAct
-- [ ] 单元测试覆盖：正常路径、`../etc/passwd`、危险命令
-- [ ] `mvn test` 全绿
+- [x] 创建 `PathGuard`、`CommandGuard`
+- [x] `ToolRegistry` 增加 `setProjectPath(String)` / `getProjectPath()`
+- [x] `list_dir` / `read_file` / `write_file` 路径经 PathGuard
+- [x] `execute_command` 经 CommandGuard
+- [x] 策略拒绝返回字符串（不抛给上层），LLM 可继续 ReAct
+- [x] 单元测试覆盖：正常路径、`../etc/passwd`、危险命令
+- [x] `mvn test` 全绿
 
 ### 验收标准
 
@@ -580,4 +581,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-09 · Day 5 完成态 · 阶段 2 进行中（下一步 Day 6）*
+*文档版本：2026-06-09 · Day 6 完成态 · 阶段 2 进行中（下一步 Day 7）*

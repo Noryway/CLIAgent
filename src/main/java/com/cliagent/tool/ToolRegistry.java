@@ -1,5 +1,7 @@
 package com.cliagent.tool;
 
+import com.cliagent.policy.CommandGuard;
+import com.cliagent.policy.PathGuard;
 import com.cliagent.llm.LlmClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,9 +43,20 @@ public class ToolRegistry {
 
     //工具注册表，用于注册工具
     private final Map<String, Tool> tools = new LinkedHashMap<>();
+    private String projectPath = System.getProperty("user.dir");
+    private PathGuard pathGuard = new PathGuard(projectPath);
 
     public ToolRegistry() {
         registerBuiltinTools();
+    }
+
+    public void setProjectPath(String projectPath) {
+        this.projectPath = projectPath;
+        this.pathGuard = new PathGuard(projectPath);
+    }
+
+    public String getProjectPath() {
+        return projectPath;
     }
 
     public void register(Tool tool) {
@@ -82,7 +95,7 @@ public class ToolRegistry {
                 "list_dir",
                 "列出目录内容",
                 createParameters(new Param("path", "string", "目录路径", true)),
-                args -> listDir(args.get("path"))
+                args -> this.listDir(args.get("path"))
         ));
         register(new Tool(
                 "read_file",
@@ -92,7 +105,7 @@ public class ToolRegistry {
                         new Param("offset", "integer", "起始行号，1 表示第一行", false),
                         new Param("limit", "integer", "最多读取多少行，最大 2000 行", false)
                 ),
-                args -> readFile(args.get("path"), args.get("offset"), args.get("limit"))
+                args -> this.readFile(args.get("path"), args.get("offset"), args.get("limit"))
         ));
         register(new Tool(
                 "write_file",
@@ -101,13 +114,13 @@ public class ToolRegistry {
                         new Param("path", "string", "文件路径", true),
                         new Param("content", "string", "要写入的文件内容", true)
                 ),
-                args -> writeFile(args.get("path"), args.get("content"))
+                args -> this.writeFile(args.get("path"), args.get("content"))
         ));
         register(new Tool(
                 "execute_command",
                 "在当前项目目录中执行 Shell 命令（60 秒超时，输出最多 8KB）",
                 createParameters(new Param("command", "string", "要执行的命令", true)),
-                args -> executeCommand(args.get("command"))
+                args -> this.executeCommand(args.get("command"))
         ));
         register(new Tool(
                 "create_project",
@@ -116,16 +129,15 @@ public class ToolRegistry {
                         new Param("name", "string", "项目名称或目录路径", true),
                         new Param("type", "string", "项目类型 (java/python/node)", true)
                 ),
-                args -> createProject(args.get("name"), args.get("type"))
+                args -> this.createProject(args.get("name"), args.get("type"))
         ));
     }
 
-    //添加工具自己的逻辑
-    private static String listDir(String path) throws IOException {
+    private String listDir(String path) throws IOException {
         if (path == null || path.isBlank()) {
             return "目录路径不能为空";
         }
-        Path dir = Path.of(path);
+        Path dir = pathGuard.resolveSafe(path);
         if (!Files.exists(dir)) {
             return "目录不存在: " + path;
         }
@@ -144,12 +156,11 @@ public class ToolRegistry {
         }
     }
 
-    //读取文件内容
-    private static String readFile(String path, String offsetStr, String limitStr) throws IOException {
+    private String readFile(String path, String offsetStr, String limitStr) throws IOException {
         if (path == null || path.isBlank()) {
             return "文件路径不能为空";
         }
-        Path file = Path.of(path);
+        Path file = pathGuard.resolveSafe(path);
         if (!Files.exists(file)) {
             return "文件不存在: " + path;
         }
@@ -187,12 +198,11 @@ public class ToolRegistry {
         return sb.toString().trim();
     }
 
-    //写入文件内容
-    private static String writeFile(String path, String content) throws IOException {
+    private String writeFile(String path, String content) throws IOException {
         if (path == null || path.isBlank()) {
             return "文件路径不能为空";
         }
-        Path file = Path.of(path);
+        Path file = pathGuard.resolveSafe(path);
         if (Files.exists(file) && Files.isDirectory(file)) {
             return "目标是目录，不能写入: " + path;
         }
@@ -204,11 +214,15 @@ public class ToolRegistry {
         return "文件已写入: " + path;
     }
 
-    //执行命令
-    private static String executeCommand(String command) throws Exception {
+    private String executeCommand(String command) throws Exception {
         String normalized = command == null ? "" : command.trim();
         if (normalized.isEmpty()) {
             return "命令不能为空";
+        }
+
+        String denyReason = CommandGuard.check(normalized);
+        if (denyReason != null) {
+            return "策略拒绝: " + denyReason;
         }
 
         //创建一个单线程的线程池，用于读取命令输出
@@ -231,8 +245,7 @@ public class ToolRegistry {
              * - start: 启动进程
             */
             ProcessBuilder pb = new ProcessBuilder("bash", "-c", normalized);
-            //设置当前项目目录
-            pb.directory(Path.of(System.getProperty("user.dir")).toFile());
+            pb.directory(Path.of(projectPath).toFile());
             //将stderr合并到stout
             pb.redirectErrorStream(true);
             //启动进程
@@ -303,21 +316,20 @@ public class ToolRegistry {
      * @return 项目创建结果
      * @throws IOException 如果创建项目失败
      */
-    private static String createProject(String name, String type) throws IOException {
+    private String createProject(String name, String type) throws IOException {
         if (name == null || name.isBlank()) {
             return "项目名称不能为空";
         }
         if (type == null || type.isBlank()) {
             return "项目类型不能为空";
         }
-        
+
         String normalizedType = type.toLowerCase();
         if (!normalizedType.equals("java") && !normalizedType.equals("python") && !normalizedType.equals("node")) {
             return "不支持的项目类型: " + type + "（支持 java/python/node）";
         }
 
-        //创建项目根目录
-        Path projectRoot = Path.of(name);
+        Path projectRoot = pathGuard.resolveSafe(name);
         Files.createDirectories(projectRoot);//创建项目根目录
 
         //每个分支只做：建子目录、写模版文件

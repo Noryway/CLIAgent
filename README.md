@@ -15,6 +15,7 @@
 | Day 3 | ✅ | `Agent.run()` ReAct 循环 + Main 集成 |
 | Day 4 | ✅ | 交互式 REPL（多轮对话 / clear / exit） |
 | Day 5 | ✅ | `AgentBudget` 停滞检测 + 硬轮数兜底 |
+| Day 6 | ✅ | `PathGuard` + `CommandGuard` 策略围栏 |
 
 ## 功能概览
 
@@ -25,6 +26,7 @@
 - **ToolRegistry**：注册、执行、导出 5 个内置工具定义
 - **ReAct Agent**：`Agent.run()` 自动 chat → 执行工具 → 再 chat，直到 LLM 返回纯文本
 - **AgentBudget**：硬轮数上限（10）+ 停滞检测（连续 3 次相同工具调用自动停止）
+- **策略围栏**：`PathGuard` 限制文件路径在项目根内；`CommandGuard` 拦截危险 shell
 - **交互式 REPL**：无参数启动进入多轮对话；支持 `exit` / `quit` 退出、`clear` / `/clear` 清空历史
 - **单元测试**：LLM 协议 + 工具 + Agent + AgentBudget + REPL 命令 Mock 测试（不依赖 API Key）
 
@@ -127,6 +129,9 @@ CLIAgent/
     │   │   └── AgentBudget.java
     │   ├── config/
     │   │   └── EnvConfig.java
+    │   ├── policy/
+    │   │   ├── PathGuard.java
+    │   │   └── CommandGuard.java
     │   ├── llm/
     │   │   ├── LlmClient.java
     │   │   └── DeepSeekClient.java
@@ -142,6 +147,9 @@ CLIAgent/
         ├── llm/
         │   ├── MessageTest.java
         │   └── DeepSeekClientTest.java
+        ├── policy/
+        │   ├── PathGuardTest.java
+        │   └── CommandGuardTest.java
         └── tool/
             └── ToolRegistryTest.java
 ```
@@ -223,7 +231,7 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 | 多轮对话 history | ✅ | `Agent.history` 成员变量，跨 `run()` 共享 |
 | REPL 交互入口 | ✅ | `Main.runRepl()` + `BufferedReader` |
 | `clearHistory()` | ✅ | 清空历史，只保留 system |
-| PathGuard / CommandGuard | ⏳ | Day 6 |
+| PathGuard / CommandGuard | ✅ | 路径沙箱 + 命令黑名单 |
 | ReplCommandParser | ⏳ | Day 7 |
 | Token 统计 + `/context` | ⏳ | Day 8 |
 | 流式 SSE | ⏳ | Day 10 |
@@ -243,7 +251,7 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="你好"
 | Day | 状态 | 模块 | 关键产出 |
 |-----|------|------|----------|
 | Day 5 | ✅ | AgentBudget | 停滞检测 + 硬轮数兜底 |
-| Day 6 | ⏳ | 策略围栏 | `PathGuard` + `CommandGuard` |
+| Day 6 | ✅ | 策略围栏 | `PathGuard` + `CommandGuard` |
 | Day 7 | ⏳ | 命令解析 | `ReplCommandParser` + `/help` |
 | Day 8 | ⏳ | 可观测 | Token 累计 + `/context` |
 | Day 9 | ⏳ | 项目沙箱 | `projectPath` 显式配置 |
