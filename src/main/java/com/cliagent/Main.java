@@ -6,6 +6,7 @@ import com.cliagent.cli.ReplCommandParser.CommandType;
 import com.cliagent.cli.ReplCommandParser.ParsedCommand;
 import com.cliagent.config.EnvConfig;
 import com.cliagent.llm.DeepSeekClient;
+import com.cliagent.memory.MemoryManager;
 import com.cliagent.tool.ToolRegistry;
 
 import java.io.BufferedReader;
@@ -55,10 +56,12 @@ public class Main {
         DeepSeekClient client = new DeepSeekClient(apiKey, model);
         ToolRegistry registry = new ToolRegistry();
         registry.setProjectPath(cli.projectPath());
-        Agent agent = new Agent(client, registry);
+        MemoryManager memoryManager = new MemoryManager();
+        memoryManager.setProjectPath(cli.projectPath());
+        Agent agent = new Agent(client, registry, memoryManager);
 
         if (cli.promptArgs().length == 0) {
-            runRepl(agent, cli.projectPath(), cli.streaming());
+            runRepl(agent, memoryManager, cli.projectPath(), cli.streaming());
         } else {
             runOnce(agent, String.join(" ", cli.promptArgs()), cli.streaming());
         }
@@ -101,7 +104,7 @@ public class Main {
     }
 
     //REPL模式
-    private static void runRepl(Agent agent, String projectPath, boolean streaming) {
+    private static void runRepl(Agent agent, MemoryManager memoryManager, String projectPath, boolean streaming) {
         System.out.println("CLIAgent 已启动，项目目录: " + projectPath);
         if (streaming) {
             System.out.println("流式输出已启用（--stream）。");
@@ -131,6 +134,14 @@ public class Main {
                 }
                 case HELP -> printReplHelp();
                 case CONTEXT -> System.out.println(agent.getContextStatus());
+                case MEMORY_SAVE -> handleMemorySave(memoryManager, command.payload());
+                case MEMORY_STATUS -> System.out.println(memoryManager.formatStatus());
+                case MEMORY_LIST -> System.out.println(memoryManager.formatList());
+                case MEMORY_SEARCH -> handleMemorySearch(memoryManager, command.payload());
+                case MEMORY_CLEAR -> {
+                    memoryManager.clearProjectMemories();
+                    System.out.println("🗑️ 当前项目的长期记忆已清空。");
+                }
                 case UNKNOWN -> {
                     System.out.println("❌ 未知命令: " + command.payload());
                     printReplHelp();
@@ -169,6 +180,27 @@ public class Main {
             System.err.println("❌ 调用失败: " + e.getMessage());
             System.exit(2);
         }
+    }
+
+    private static void handleMemorySave(MemoryManager memoryManager, String content) {
+        if (content == null || content.isBlank()) {
+            System.out.println("❌ 请提供要保存的内容，例如 /save 项目使用 Java 17");
+            return;
+        }
+        try {
+            memoryManager.save(content);
+            System.out.println("💾 已保存到长期记忆: " + content.trim());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            System.out.println("❌ " + e.getMessage());
+        }
+    }
+
+    private static void handleMemorySearch(MemoryManager memoryManager, String query) {
+        if (query == null || query.isBlank()) {
+            System.out.println("❌ 请提供搜索关键词，例如 /memory search Java");
+            return;
+        }
+        System.out.println(memoryManager.formatSearchResults(query));
     }
 
     private static void printReplHelp() {

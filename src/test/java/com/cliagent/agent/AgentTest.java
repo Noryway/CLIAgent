@@ -6,10 +6,13 @@ import com.cliagent.llm.LlmClient.Message;
 import com.cliagent.llm.LlmClient.Tool;
 import com.cliagent.llm.LlmClient.ToolCall;
 import com.cliagent.llm.StreamListener;
+import com.cliagent.memory.MemoryManager;
 import com.cliagent.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -155,6 +158,58 @@ class AgentTest {
         assertEquals("Hello", answer);
         assertTrue(llm.streamingChatUsed);
         assertEquals(List.of("He", "llo"), llm.contentDeltas);
+    }
+
+    @Test
+    void longTermMemorySurvivesClearHistory(@TempDir Path tempDir) throws IOException {
+        Path storageFile = tempDir.resolve("memory.json");
+        String projectPath = tempDir.toAbsolutePath().normalize().toString();
+
+        MemoryManager memoryManager = new MemoryManager(storageFile);
+        memoryManager.setProjectPath(projectPath);
+        memoryManager.save("用户叫小明");
+
+        Agent agent = new Agent(new LongTermMemoryLlm(), new ToolRegistry(), memoryManager);
+        agent.clearHistory();
+
+        assertEquals("你叫小明。", agent.run("我叫什么？"));
+    }
+
+    @Test
+    void systemPromptIncludesSavedLongTermMemory(@TempDir Path tempDir) {
+        Path storageFile = tempDir.resolve("memory.json");
+        String projectPath = tempDir.toAbsolutePath().normalize().toString();
+
+        MemoryManager memoryManager = new MemoryManager(storageFile);
+        memoryManager.setProjectPath(projectPath);
+        memoryManager.save("默认使用 Maven 构建");
+
+        Agent agent = new Agent(new SingleReplyLlm("ok"), new ToolRegistry(), memoryManager);
+        try {
+            agent.run("你好");
+        } catch (IOException ignored) {
+        }
+
+        String systemPrompt = agent.getHistory().get(0).content();
+        assertTrue(systemPrompt.contains("已知长期记忆"));
+        assertTrue(systemPrompt.contains("默认使用 Maven 构建"));
+    }
+
+    /** 根据 system 里的长期记忆是否包含「小明」决定能否回答名字 */
+    private static final class LongTermMemoryLlm implements LlmClient {
+        @Override
+        public ChatResponse chat(List<Message> messages, List<Tool> tools) {
+            boolean knowsName = messages.stream()
+                    .filter(m -> "system".equals(m.role()))
+                    .anyMatch(m -> m.content() != null && m.content().contains("小明"));
+            String reply = knowsName ? "你叫小明。" : "我不知道你的名字。";
+            return new ChatResponse("assistant", reply, List.of(), 10, 5);
+        }
+
+        @Override
+        public String getModelName() {
+            return "stub-long-term-memory";
+        }
     }
 
     /** 根据 history 里是否出现过「小明」决定能否回答名字 */

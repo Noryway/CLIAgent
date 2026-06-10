@@ -70,6 +70,36 @@ class ReplCommandParserTest {
     }
 
     @Test
+    void parsesMemorySaveCommands() {
+        assertEquals(ReplCommandParser.CommandType.MEMORY_SAVE,
+                ReplCommandParser.parse("/save 项目使用 Java 17").type());
+        assertEquals("项目使用 Java 17",
+                ReplCommandParser.parse("/save 项目使用 Java 17").payload());
+        assertEquals(ReplCommandParser.CommandType.MEMORY_SAVE,
+                ReplCommandParser.parse("/save").type());
+        assertEquals("", ReplCommandParser.parse("/save").payload());
+    }
+
+    @Test
+    void parsesMemoryCommands() {
+        assertEquals(ReplCommandParser.CommandType.MEMORY_STATUS,
+                ReplCommandParser.parse("/memory").type());
+        assertEquals(ReplCommandParser.CommandType.MEMORY_LIST,
+                ReplCommandParser.parse("/memory list").type());
+        assertEquals(ReplCommandParser.CommandType.MEMORY_CLEAR,
+                ReplCommandParser.parse("/memory clear").type());
+        assertEquals(ReplCommandParser.CommandType.MEMORY_SEARCH,
+                ReplCommandParser.parse("/memory search Java").type());
+        assertEquals("Java", ReplCommandParser.parse("/memory search Java").payload());
+    }
+
+    @Test
+    void unknownMemorySubcommandStaysUnknown() {
+        assertEquals(ReplCommandParser.CommandType.UNKNOWN,
+                ReplCommandParser.parse("/memory foo").type());
+    }
+
+    @Test
     void formatHelpListsCoreCommands() {
         String help = ReplCommandParser.formatHelp();
 
@@ -77,6 +107,8 @@ class ReplCommandParserTest {
         assertTrue(help.contains("/clear"));
         assertTrue(help.contains("/help"));
         assertTrue(help.contains("/context"));
+        assertTrue(help.contains("/save"));
+        assertTrue(help.contains("/memory list"));
         assertNull(ReplCommandParser.parse("/help").payload());
     }
 }

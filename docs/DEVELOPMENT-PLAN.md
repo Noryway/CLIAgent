@@ -40,37 +40,32 @@
 | Day 8 | ✅ | Token 累计 + `/context` | `feat: Day 8 — token tracking...` |
 | Day 9 | ✅ | projectPath 显式化 + `--cwd` | `feat: Day 9 — explicit projectPath...` |
 | Day 10 | ✅ | SSE 流式 + `--stream` | `feat: Day 10 — streaming SSE...` |
+| 阶段 3 | ✅ | Memory 长期记忆 | `feat: Memory — long-term /save...` |
 
-### 当前架构（Day 10）
+### 当前架构（Memory 完成态）
 
 ```text
 Main
-  ├─ parseCliArgs()：--cwd / --stream + prompt 分离
-  ├─ 无参数 → runRepl(streaming)
-  ├─ 有参数 → runOnce(streaming)
-  ├─ EnvConfig（-D > env > .env）
-  ├─ ToolRegistry.setProjectPath()（PathGuard + execute_command cwd）
-  ├─ ReplCommandParser（exit/clear/help/context）
-  └─ Agent
-        ├─ run(input, streaming)：ReAct + 可选 SSE 逐字打印
-        ├─ history + token 统计（跨 run 共享）
-        ├─ AgentBudget（硬轮数 10 + 停滞窗口 3）
+  ├─ parseCliArgs()：--cwd / --stream
+  ├─ MemoryManager.setProjectPath() + ToolRegistry.setProjectPath()
+  ├─ ReplCommandParser：exit/clear/help/context/save/memory
+  └─ Agent(llm, registry, memoryManager)
+        ├─ refreshSystemPrompt()：长期记忆 → system
+        ├─ run(streaming)：ReAct + AgentBudget
         ├─ getContextStatus()（/context）
-        └─ clearHistory()（只保留 system，token 归零）
+        └─ clearHistory()：只清短期 history
 
-DeepSeekClient
-  ├─ chat(2) → stream:false → parseResponse
-  └─ chat(3, StreamListener) → stream:true → SSE 逐行解析
+MemoryStore → ~/.cliagent/memory.json
+DeepSeekClient → 非流式 / SSE 流式双路径
 ```
 
-### 已知缺口（对比 paicli，阶段 2 要补）
+### 已知缺口（对比 paicli，可选后续）
 
-- [x] 停滞检测（连续相同 tool+args 死循环）
-- [x] PathGuard / CommandGuard（工具安全围栏）
-- [x] 命令解析器（`/` 未知命令不发给 LLM）
-- [x] Token 统计与 `/context` 可观测
-- [x] 流式 SSE 输出（`--stream`）
-- [ ] 长期记忆 / Plan / RAG（阶段 3 选一个）
+- [x] 长期记忆 Memory（`/save`、跨会话 JSON）
+- [ ] Plan-and-Execute
+- [ ] RAG 代码检索
+- [ ] LLM 短期记忆压缩（paicli ContextCompressor）
+- [ ] `/save --global` 全局记忆 scope
 
 ---
 
@@ -463,20 +458,56 @@ feat: Day 10 — streaming SSE chat output
 | B | Plan-and-Execute | 7–10 天 | 复杂任务拆解、步骤状态机 |
 | C | RAG 代码检索 | 7–10 天 | `/index` `/search`、embedding 检索 |
 
-### 路线 A：Memory（推荐）
+### 路线 A：Memory（✅ 已完成）
 
 ```text
 memory/
-├── MemoryEntry.java
-├── MemoryManager.java     # 短期裁剪 + 长期持久化
-└── MemoryStore.java       # ~/.cliagent/memory.json
+├── MemoryEntry.java       # 记忆条目 record
+├── MemoryStore.java       # ~/.cliagent/memory.json 读写
+└── MemoryManager.java     # save / list / search / buildContextBlock
 
-命令：/save <事实>、/memory list、/memory search
+命令：/save <事实>、/memory、/memory list、/memory search、/memory clear
 ```
 
-参考 paicli：`MemoryManager`、`/save`、`/memory clear` vs `/clear` 职责分离。
+参考 paicli：`MemoryManager`、`LongTermMemory`、`/save`、`/memory clear` vs `/clear`。
 
-**验收**：重启进程后 `/memory list` 仍能看到上次 `/save` 的内容；`/clear` 不清长期记忆。
+#### 任务清单
+
+- [x] Step 1：`MemoryEntry` + `MemoryStore` + `MemoryManager` + 单元测试
+- [x] Step 2：`ReplCommandParser` + `Main` 处理 memory 命令
+- [x] Step 3：`Agent.refreshSystemPrompt()` 注入长期记忆
+- [x] Step 4：README 与本文档进度同步
+- [x] `mvn test` 全绿
+
+#### 验收标准
+
+- [x] `/save` 写入 `~/.cliagent/memory.json`
+- [x] 重启进程后 `/memory list` 仍可见
+- [x] `/clear` 不清长期记忆；`/memory clear` 才清
+- [x] `clear` 后 Agent 仍能从 system 中的长期记忆回答
+
+#### commit 建议
+
+```text
+feat: Memory — long-term /save and /memory commands
+```
+
+#### 手动 demo 清单
+
+```bash
+mvn clean package -q
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar
+
+you> /save 用户叫小明，项目使用 Java 17
+you> /memory list
+you> clear
+you> 我叫什么？项目用什么语言？     # 应参考长期记忆
+you> exit
+
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar
+you> /memory list                  # 重启后仍在
+cat ~/.cliagent/memory.json        # 查看持久化文件
+```
 
 ### 路线 B：Plan-and-Execute
 
@@ -578,11 +609,12 @@ rag/
 - [x] README 与本文档进度同步
 - [x] 能完成 5 分钟面试演示：REPL 多轮 → 工具调用 → clear → 安全拒绝 → `/context` → `--stream`
 
-### 阶段 3 完成（选一个路线后）
+### 阶段 3 完成（Memory 路线）
 
-- [ ] 有一个可深挖模块（Memory / Plan / RAG）
-- [ ] 模块有独立单元测试
-- [ ] 简历上可写「实现 xxx，对标 paicli 裁剪版」
+- [x] 有可深挖模块：长期记忆 Memory
+- [x] 模块有独立单元测试（`MemoryStoreTest`、`MemoryManagerTest`）
+- [x] 简历可写：「实现跨会话 `/save` 长期记忆，对标 paicli 裁剪版」
+- [x] 能完成 demo：`/save` → `clear` → 仍记得 → 重启仍在
 
 ---
 
@@ -606,4 +638,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-10 · Day 10 完成态 · 阶段 2 ✅ · 下一步阶段 3（Memory / Plan / RAG 三选一）*
+*文档版本：2026-06-10 · Memory 完成态 · 阶段 3（路线 A）✅*

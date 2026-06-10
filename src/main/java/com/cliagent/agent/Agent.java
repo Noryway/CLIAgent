@@ -4,6 +4,7 @@ import com.cliagent.llm.LlmClient;
 import com.cliagent.llm.LlmClient.ChatResponse;
 import com.cliagent.llm.LlmClient.Message;
 import com.cliagent.llm.LlmClient.ToolCall;
+import com.cliagent.memory.MemoryManager;
 import com.cliagent.tool.ToolRegistry;
 
 import java.io.IOException;
@@ -20,13 +21,19 @@ public class Agent {
 
     private final LlmClient llm;
     private final ToolRegistry registry;
+    private final MemoryManager memoryManager;
     private final List<Message> history = new ArrayList<>();
     private int totalInputTokens;
     private int totalOutputTokens;
 
     public Agent(LlmClient llm, ToolRegistry registry) {
+        this(llm, registry, null);
+    }
+
+    public Agent(LlmClient llm, ToolRegistry registry, MemoryManager memoryManager) {
         this.llm = llm;
         this.registry = registry;
+        this.memoryManager = memoryManager;
         history.add(Message.system(DEFAULT_SYSTEM_PROMPT));
     }
 
@@ -41,6 +48,7 @@ public class Agent {
      * 处理一轮用户输入。{@code streaming=true} 时最终文本回答逐 chunk 打印到 stdout。
      */
     public String run(String userInput, boolean streaming) throws IOException {
+        refreshSystemPrompt(userInput);
         history.add(Message.user(userInput));
         AgentBudget budget = AgentBudget.defaults();
 
@@ -108,13 +116,27 @@ public class Agent {
         );
     }
 
-    /** 清空对话历史，保留 system 消息；token 统计一并重置。 */
+    /** 清空对话历史，保留 system 消息；token 统计一并重置。长期记忆仍会在下次 run 时注入。 */
     public void clearHistory() {
-        Message systemMsg = history.get(0);
         history.clear();
-        history.add(systemMsg);
+        history.add(Message.system(buildSystemPromptContent("")));
         totalInputTokens = 0;
         totalOutputTokens = 0;
+    }
+
+    private void refreshSystemPrompt(String userInput) {
+        history.set(0, Message.system(buildSystemPromptContent(userInput)));
+    }
+
+    private String buildSystemPromptContent(String userInput) {
+        if (memoryManager == null) {
+            return DEFAULT_SYSTEM_PROMPT;
+        }
+        String memoryBlock = memoryManager.buildContextBlock(userInput);
+        if (memoryBlock.isBlank()) {
+            return DEFAULT_SYSTEM_PROMPT;
+        }
+        return DEFAULT_SYSTEM_PROMPT + "\n\n" + memoryBlock;
     }
 
     private void recordTokens(ChatResponse response) {

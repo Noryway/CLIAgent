@@ -20,6 +20,7 @@
 | Day 8 | ✅ | Token 累计 + `/context` 可观测 |
 | Day 9 | ✅ | `projectPath` 显式沙箱 + `--cwd` 启动参数 |
 | Day 10 | ✅ | SSE 流式输出 + `--stream` 启动参数 |
+| 阶段 3 | ✅ | Memory 长期记忆（`/save` + `~/.cliagent/memory.json`） |
 
 ## 功能概览
 
@@ -35,7 +36,8 @@
 - **交互式 REPL**：无参数启动进入多轮对话；`ReplCommandParser` 解析 `exit` / `clear` / `help` / `context`；未知 `/` 命令不发给 LLM
 - **Token 可观测**：`Agent` 累计 `usage` token；`/context` 查看 history 条数与用量（不调 API）
 - **流式 SSE**：`--stream` 启用；`StreamListener` 逐 chunk 打印 `assistant>` 回答（ReAct + tool_calls 仍可用）
-- **单元测试**：LLM 协议 + 工具 + Agent + AgentBudget + REPL 命令 Mock 测试（不依赖 API Key）
+- **长期记忆 Memory**：`/save` 持久化到 `~/.cliagent/memory.json`；`/memory list|search|clear`；`/clear` 不清长期记忆；Agent 每轮注入 system
+- **单元测试**：LLM + 工具 + Agent + Memory + REPL 命令 Mock 测试（不依赖 API Key）
 
 ### 内置工具（Day 2）
 
@@ -91,9 +93,14 @@ java -jar target/CLIAgent-1.0-SNAPSHOT.jar --stream "用三句话介绍 ReAct"
 | 命令 | 作用 |
 |------|------|
 | `exit` / `quit` / `/exit` / `/quit` | 退出程序 |
-| `clear` / `/clear` | 清空对话历史（保留 system 提示词） |
+| `clear` / `/clear` | 清空**短期**对话 history（保留 system；**不清**长期记忆） |
 | `help` / `/help` | 显示可用命令 |
 | `context` / `/context` | 查看 history 条数、累计 token、模型名 |
+| `/save <事实>` | 保存当前项目的长期记忆（写入 `~/.cliagent/memory.json`） |
+| `/memory` | 查看长期记忆摘要（条数 + 项目路径） |
+| `/memory list` | 列出当前项目全部长期记忆 |
+| `/memory search <词>` | 关键词搜索长期记忆 |
+| `/memory clear` | 清空**当前项目**长期记忆（不影响 `/clear`） |
 | `/xxx`（未知） | 本地提示，不调用 API |
 | 空行 | 跳过，不调用 API |
 | 其他输入 | 发送给 Agent，进入 ReAct 循环 |
@@ -147,6 +154,44 @@ java -jar target/CLIAgent-1.0-SNAPSHOT.jar --stream "介绍一下 Java Agent CLI
 java -jar target/CLIAgent-1.0-SNAPSHOT.jar --cwd /path/to/project --stream
 ```
 
+### 长期记忆（Memory）
+
+短期对话（`Agent.history`）与长期记忆（磁盘 JSON）**职责分离**：
+
+| 存储 | 生命周期 | 命令 |
+|------|----------|------|
+| 短期 history | 当前进程、`/clear` 可清 | `clear` / 多轮对话 |
+| 长期 memory | 跨会话、`~/.cliagent/memory.json` | `/save`、`/memory *` |
+
+| 组件 | 作用 |
+|------|------|
+| `MemoryStore` | 读写 `~/.cliagent/memory.json` |
+| `MemoryManager` | 按 `projectPath` 作用域 save / list / search |
+| `Agent.refreshSystemPrompt()` | 每轮 run 把长期记忆注入 system prompt |
+| `ReplCommandParser` | 解析 `/save`、`/memory list|search|clear` |
+
+```bash
+you> /save 用户叫小明，项目使用 Java 17
+💾 已保存到长期记忆: ...
+
+you> /memory list
+长期记忆 (1 条):
+  1. 用户叫小明，项目使用 Java 17
+
+you> clear                    # 只清短期 history
+🗑️ 对话历史已清空。
+
+you> 我叫什么？              # 仍可从长期记忆回答（注入 system）
+assistant> ...
+
+you> /memory clear            # 只清当前项目的长期记忆
+🗑️ 当前项目的长期记忆已清空。
+
+# 重启进程后 /memory list 仍可见（验收跨会话）
+```
+
+> 长期记忆按 **projectPath** 隔离：在目录 A 启动 `/save` 的内容，在 `--cwd B` 下不可见。
+
 ### 预期输出
 
 **REPL 多轮对话：**
@@ -191,6 +236,19 @@ you> 用三句话介绍 ReAct
 assistant> ReAct 是一种...（此处逐字出现，非一次性弹出）
 ```
 
+**长期记忆：**
+
+```text
+you> /save 默认使用 Maven 构建
+💾 已保存到长期记忆: 默认使用 Maven 构建
+you> /memory
+长期记忆: 1 条 | 项目: /home/you/CLIAgent
+you> clear
+🗑️ 对话历史已清空。
+you> 这个项目怎么构建？
+assistant> （参考 system 中的长期记忆回答）
+```
+
 ## 项目结构
 
 ```text
@@ -209,6 +267,10 @@ CLIAgent/
     │   ├── agent/
     │   │   ├── Agent.java
     │   │   └── AgentBudget.java
+    │   ├── memory/
+    │   │   ├── MemoryEntry.java
+    │   │   ├── MemoryStore.java
+    │   │   └── MemoryManager.java
     │   ├── config/
     │   │   └── EnvConfig.java
     │   ├── policy/
@@ -229,6 +291,9 @@ CLIAgent/
         ├── agent/
         │   ├── AgentTest.java
         │   └── AgentBudgetTest.java
+        ├── memory/
+        │   ├── MemoryStoreTest.java
+        │   └── MemoryManagerTest.java
         ├── llm/
         │   ├── MessageTest.java
         │   └── DeepSeekClientTest.java
@@ -243,20 +308,16 @@ CLIAgent/
 
 ```text
 Main
-  ├── parseCliArgs()：解析 --cwd / --stream，剥离启动参数
-  ├── 无参数 → runRepl()：打印 projectPath，ReplCommandParser 循环
-  ├── 有参数 → runOnce()：单次 agent.run()
-  ├── EnvConfig
-  ├── ToolRegistry.setProjectPath()：PathGuard + execute_command cwd
-  └── Agent（history + token 跨 run 共享）
-        ├── run(userInput, streaming)：ReAct while 循环
-        │     → streaming? llm.chat(..., StreamListener) : llm.chat(...)
-        │     → recordTokens()：累加 usage
-        │     → AgentBudget.check()：停滞 / 硬轮数兜底
-        │     → hasToolCalls? executeTool → continue
-        │     → else 流式逐字打印 / 非流式返回最终答案
-        ├── getContextStatus()：/context 可观测
-        └── clearHistory()：只保留 system，token 归零
+  ├── parseCliArgs()：--cwd / --stream
+  ├── MemoryManager + ToolRegistry.setProjectPath()
+  ├── ReplCommandParser：exit/clear/help/context/save/memory
+  └── Agent(llm, registry, memoryManager)
+        ├── run() 前 refreshSystemPrompt()：注入长期记忆
+        ├── ReAct + AgentBudget + 可选 SSE 流式
+        ├── getContextStatus()：/context
+        └── clearHistory()：只清短期 history
+
+MemoryStore → ~/.cliagent/memory.json（跨会话）
 ```
 
 ## 配置说明
@@ -306,6 +367,9 @@ mvn test -Dtest=ReplCommandParserTest
 # 跳过测试打包
 mvn clean package -DskipTests
 
+# 只跑 Memory 测试
+mvn test -Dtest=MemoryStoreTest,MemoryManagerTest
+
 # 开发态 REPL
 mvn -q exec:java -Dexec.mainClass="com.cliagent.Main"
 
@@ -341,6 +405,8 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="--stream"
 | ReplCommandParser | ✅ | `/help`、未知 `/` 命令本地处理 |
 | Token 统计 + `/context` | ✅ | `recordTokens()` + `getContextStatus()` |
 | 流式 SSE + `--stream` | ✅ | `StreamListener` + SSE 解析 + 逐字打印 |
+| 长期记忆 Memory | ✅ | `/save` + JSON 持久化 + system 注入 |
+| `/clear` vs `/memory clear` | ✅ | 短期 history vs 长期 memory 分离 |
 
 ## 开发计划
 
@@ -363,13 +429,18 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="--stream"
 | Day 9 | ✅ | 项目沙箱 | `projectPath` + `--cwd` |
 | Day 10 | ✅ | 流式输出 | SSE + `--stream` 逐字打印 |
 
-### 阶段 3（Day 11+）三选一
+### 阶段 3（Day 11+）Memory ✅ 已完成
 
-| 路线 | 模块 | 面试亮点 |
-|------|------|----------|
-| **A（推荐）** | Memory | `/save` 跨会话、clear 不清长期记忆 |
-| B | Plan-and-Execute | 复杂任务拆解、步骤状态机 |
-| C | RAG | `/index` `/search` 代码检索 |
+主题：**跨会话长期记忆，面试可讲 10 分钟**
+
+| Step | 状态 | 模块 | 关键产出 |
+|------|------|------|----------|
+| Step 1 | ✅ | Memory 核心 | `MemoryEntry` / `MemoryStore` / `MemoryManager` |
+| Step 2 | ✅ | REPL 命令 | `/save`、`/memory list|search|clear` |
+| Step 3 | ✅ | Agent 注入 | `buildContextBlock()` → system prompt |
+| Step 4 | ✅ | 文档 | README + DEVELOPMENT-PLAN |
+
+**未选路线（后续可选）**：Plan-and-Execute、RAG
 
 ### 开发规范
 
@@ -388,20 +459,19 @@ cd /home/ubuntu/simple-agent-cli
 git status
 git diff
 
-# 2. 暂存 Day 10（不要 add .env）
+# 2. 暂存 Memory 阶段（不要 add .env）
 git add README.md docs/DEVELOPMENT-PLAN.md \
   src/main/java/com/cliagent/Main.java \
   src/main/java/com/cliagent/agent/Agent.java \
-  src/main/java/com/cliagent/llm/LlmClient.java \
-  src/main/java/com/cliagent/llm/StreamListener.java \
-  src/main/java/com/cliagent/llm/DeepSeekClient.java \
-  src/test/java/com/cliagent/MainTest.java \
+  src/main/java/com/cliagent/cli/ReplCommandParser.java \
+  src/main/java/com/cliagent/memory/ \
+  src/test/java/com/cliagent/memory/ \
   src/test/java/com/cliagent/agent/AgentTest.java \
-  src/test/java/com/cliagent/llm/DeepSeekClientTest.java
+  src/test/java/com/cliagent/cli/ReplCommandParserTest.java
 
 # 3. 提交
 git commit -m "$(cat <<'EOF'
-feat: Day 10 — streaming SSE chat output
+feat: Memory — long-term /save and /memory commands
 
 EOF
 )"
