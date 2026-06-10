@@ -232,4 +232,27 @@ class ToolRegistryTest {
         String result = registry.executeTool("read_file", "{\"path\":\"" + pathJson + "\"}");
         assertTrue(result.contains("sandbox"));
     }
+
+    @Test
+    void setProjectPathNormalizesToAbsolutePath(@TempDir Path tempDir) throws Exception {
+        Path nested = tempDir.resolve("a/b");
+        Files.createDirectories(nested);
+
+        ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.resolve("a/./b").toString());
+
+        assertEquals(nested.toAbsolutePath().normalize().toString(), registry.getProjectPath());
+    }
+
+    @Test
+    void executeCommandPwdReturnsProjectPath(@TempDir Path tempDir) {
+        ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(tempDir.toString());
+        String expected = registry.getProjectPath();
+
+        String result = registry.executeTool("execute_command", "{\"command\":\"pwd\"}");
+
+        assertTrue(result.contains("exit code: 0"), result);
+        assertTrue(result.contains(expected), () -> "expected pwd output to contain " + expected + ", got: " + result);
+    }
 }

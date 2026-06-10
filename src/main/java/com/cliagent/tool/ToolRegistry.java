@@ -51,12 +51,19 @@ public class ToolRegistry {
     }
 
     public void setProjectPath(String projectPath) {
-        this.projectPath = projectPath;
-        this.pathGuard = new PathGuard(projectPath);
+        this.projectPath = normalizeProjectPath(projectPath);
+        this.pathGuard = new PathGuard(this.projectPath);
     }
 
     public String getProjectPath() {
         return projectPath;
+    }
+
+    private static String normalizeProjectPath(String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) {
+            throw new IllegalArgumentException("项目根路径不能为空");
+        }
+        return Path.of(projectPath).toAbsolutePath().normalize().toString();
     }
 
     public void register(Tool tool) {

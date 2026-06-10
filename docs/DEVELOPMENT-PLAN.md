@@ -38,15 +38,17 @@
 | Day 6 | ✅ | `PathGuard` + `CommandGuard` 策略围栏 | `feat: Day 6 — PathGuard...` |
 | Day 7 | ✅ | `ReplCommandParser` 斜杠命令 | `feat: Day 7 — ReplCommandParser` |
 | Day 8 | ✅ | Token 累计 + `/context` | `feat: Day 8 — token tracking...` |
+| Day 9 | ✅ | projectPath 显式化 + `--cwd` | `feat: Day 9 — explicit projectPath...` |
 
-### 当前架构（Day 8）
+### 当前架构（Day 9）
 
 ```text
 Main
-  ├─ 无参数 → runRepl()：you> 循环
+  ├─ parseCliArgs()：--cwd + prompt 分离
+  ├─ 无参数 → runRepl()：打印 projectPath
   ├─ 有参数 → runOnce()：单次对话
   ├─ EnvConfig（-D > env > .env）
-  ├─ ToolRegistry（5 内置工具）
+  ├─ ToolRegistry.setProjectPath()（PathGuard + execute_command cwd）
   ├─ ReplCommandParser（exit/clear/help/context）
   └─ Agent
         ├─ history + token 统计（跨 run 共享）
@@ -77,7 +79,7 @@ Main
 | Day 6 | ✅ 策略围栏 | `policy/PathGuard.java`、`policy/CommandGuard.java` | 读写/命令限制在项目沙箱内 |
 | Day 7 | ✅ ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
 | Day 8 | ✅ Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
-| Day 9 | projectPath 显式化 | `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
+| Day 9 | ✅ projectPath 显式化 | `Main` + `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
 | Day 10 | 流式 SSE（可选） | `DeepSeekClient` 增强 | `assistant>` 逐字输出 |
 
 ---
@@ -363,17 +365,21 @@ feat: Day 8 — token tracking and /context command
 
 ```text
 src/main/java/com/cliagent/
-├── tool/ToolRegistry.java   # setProjectPath，execute_command 用 pb.directory()
-└── Main.java                # 启动时 setProjectPath，可选 --cwd 参数
+├── tool/ToolRegistry.java   # setProjectPath 规范化，execute_command 用 pb.directory()
+└── Main.java                # 启动时 setProjectPath，--cwd 参数
+
+src/test/java/com/cliagent/
+├── MainTest.java            # parseCliArgs / --cwd 测试
+└── tool/ToolRegistryTest.java  # pwd 验收测试
 ```
 
 ### 任务清单
 
-- [ ] `ToolRegistry` 构造时默认 `System.getProperty("user.dir")`
-- [ ] `execute_command` 的 `ProcessBuilder` 使用 `projectPath` 作为 working directory
-- [ ] （可选）`java -jar ... --cwd /path` 覆盖项目路径
-- [ ] README 补充「必须在项目根启动」说明
-- [ ] `mvn test` 全绿
+- [x] `ToolRegistry` 构造时默认 `System.getProperty("user.dir")`
+- [x] `execute_command` 的 `ProcessBuilder` 使用 `projectPath` 作为 working directory
+- [x] `java -jar ... --cwd /path` 覆盖项目路径
+- [x] README 补充 projectPath 沙箱与 `--cwd` 说明
+- [x] `mvn test` 全绿
 
 ### 验收标准
 
@@ -585,4 +591,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-10 · Day 8 完成态 · 阶段 2 进行中（下一步 Day 9）*
+*文档版本：2026-06-10 · Day 9 完成态 · 阶段 2 进行中（下一步 Day 10）*

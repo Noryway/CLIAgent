@@ -11,20 +11,29 @@ import com.cliagent.tool.ToolRegistry;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Day 8：REPL 多轮对话 + {@link ReplCommandParser}（含 /context）；有命令行参数时保持单次模式。
+ * Day 9：显式 projectPath 沙箱 + {@link ReplCommandParser} REPL；有命令行参数时保持单次模式。
  *
  * <p>用法：
  * <pre>
- *   java -jar CLIAgent.jar                    # REPL 交互模式
- *   java -jar CLIAgent.jar "你好"              # 单次对话
- *   java -jar CLIAgent.jar "列出当前目录有哪些文件"
+ *   java -jar CLIAgent.jar                              # REPL，沙箱=当前目录
+ *   java -jar CLIAgent.jar --cwd /path/to/project       # REPL，指定项目目录
+ *   java -jar CLIAgent.jar "你好"                        # 单次对话
+ *   java -jar CLIAgent.jar --cwd /path "列出目录文件"
  * </pre>
  */
 public class Main {
 
     private static final String DEFAULT_MODEL = "deepseek-chat";
+
+    /** 剥离 {@code --cwd} 后的 CLI 参数与解析出的项目根目录。 */
+    record ParsedCliArgs(String projectPath, String[] promptArgs) {
+    }
 
     public static void main(String[] args) {
         String apiKey = EnvConfig.require("DEEPSEEK_API_KEY");
@@ -33,21 +42,65 @@ public class Main {
             System.exit(1);
         }
 
+        ParsedCliArgs cli;
+        try {
+            cli = parseCliArgs(args);
+        } catch (IllegalArgumentException e) {
+            System.err.println("❌ " + e.getMessage());
+            System.exit(1);
+            return;
+        }
+
         String model = EnvConfig.get("DEEPSEEK_MODEL", DEFAULT_MODEL);
         DeepSeekClient client = new DeepSeekClient(apiKey, model);
         ToolRegistry registry = new ToolRegistry();
+        registry.setProjectPath(cli.projectPath());
         Agent agent = new Agent(client, registry);
 
-        //如果args为空，则进入REPL模式，否则执行单次对话
-        if (args.length == 0) {
-            runRepl(agent);
+        if (cli.promptArgs().length == 0) {
+            runRepl(agent, cli.projectPath());
         } else {
-            runOnce(agent, String.join(" ", args));
+            runOnce(agent, String.join(" ", cli.promptArgs()));
         }
     }
+
+    /**
+     * 解析命令行：提取 {@code --cwd}，其余参数作为单次模式的 user prompt。
+     * 未指定 {@code --cwd} 时，沙箱根为 {@code user.dir} 的绝对规范化路径。
+     */
+    static ParsedCliArgs parseCliArgs(String[] args) {
+        String cwdOverride = null;
+        List<String> promptArgs = new ArrayList<>();
+        if (args != null) {
+            for (int i = 0; i < args.length; i++) {
+                if ("--cwd".equals(args[i])) {
+                    if (i + 1 >= args.length) {
+                        throw new IllegalArgumentException("--cwd 需要指定目录路径");
+                    }
+                    cwdOverride = args[++i];
+                } else {
+                    promptArgs.add(args[i]);
+                }
+            }
+        }
+        String projectPath = resolveProjectPath(cwdOverride);
+        return new ParsedCliArgs(projectPath, promptArgs.toArray(String[]::new));
+    }
+
+    static String resolveProjectPath(String cwdOverride) {
+        Path root = cwdOverride == null || cwdOverride.isBlank()
+                ? Path.of(".").toAbsolutePath().normalize()
+                : Path.of(cwdOverride).toAbsolutePath().normalize();
+        if (!Files.isDirectory(root)) {
+            throw new IllegalArgumentException("项目目录不存在或不是目录: " + root);
+        }
+        return root.toString();
+    }
+
     //REPL模式
-    private static void runRepl(Agent agent) {
-        System.out.println("CLIAgent 已启动，输入 help 查看命令，exit 退出。");
+    private static void runRepl(Agent agent, String projectPath) {
+        System.out.println("CLIAgent 已启动，项目目录: " + projectPath);
+        System.out.println("输入 help 查看命令，exit 退出。");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
         while (true) {
