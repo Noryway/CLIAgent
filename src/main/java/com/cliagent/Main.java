@@ -1,6 +1,9 @@
 package com.cliagent;
 
 import com.cliagent.agent.Agent;
+import com.cliagent.cli.ReplCommandParser;
+import com.cliagent.cli.ReplCommandParser.CommandType;
+import com.cliagent.cli.ReplCommandParser.ParsedCommand;
 import com.cliagent.config.EnvConfig;
 import com.cliagent.llm.DeepSeekClient;
 import com.cliagent.tool.ToolRegistry;
@@ -10,7 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 /**
- * Day 4：REPL 多轮对话；有命令行参数时保持单次模式。
+ * Day 7：REPL 多轮对话 + {@link ReplCommandParser}；有命令行参数时保持单次模式。
  *
  * <p>用法：
  * <pre>
@@ -44,7 +47,7 @@ public class Main {
     }
     //REPL模式
     private static void runRepl(Agent agent) {
-        System.out.println("CLIAgent 已启动，输入 exit 退出，clear 清空对话。");
+        System.out.println("CLIAgent 已启动，输入 help 查看命令，exit 退出。");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
         while (true) {
@@ -56,26 +59,33 @@ public class Main {
                 System.err.println("❌ 读取输入失败: " + e.getMessage());
                 break;
             }
-            //如果输入为空或为退出命令，则退出REPL模式
-            if (input == null || isExitCommand(input)) {
-                System.out.println("再见！");
-                break;
-            }
-            //如果输入为空，则继续循环
-            if (input.isBlank()) {
-                continue;
-            }
-            if (isClearCommand(input)) {
-                agent.clearHistory();
-                System.out.println("🗑️ 对话历史已清空。");
-                continue;
-            }
-            //执行单次对话
-            try {
-                String answer = agent.run(input);
-                System.out.println("assistant> " + answer);
-            } catch (IOException e) {
-                System.err.println("❌ 调用失败: " + e.getMessage());
+
+            ParsedCommand command = ReplCommandParser.parse(input);
+            switch (command.type()) {
+                case EXIT -> {
+                    System.out.println("再见！");
+                    return;
+                }
+                case CLEAR -> {
+                    agent.clearHistory();
+                    System.out.println("🗑️ 对话历史已清空。");
+                }
+                case HELP -> printReplHelp();
+                case UNKNOWN -> {
+                    System.out.println("❌ 未知命令: " + command.payload());
+                    printReplHelp();
+                }
+                case CHAT -> {
+                    if (command.payload().isBlank()) {
+                        continue;
+                    }
+                    try {
+                        String answer = agent.run(command.payload());
+                        System.out.println("assistant> " + answer);
+                    } catch (IOException e) {
+                        System.err.println("❌ 调用失败: " + e.getMessage());
+                    }
+                }
             }
         }
     }
@@ -93,16 +103,8 @@ public class Main {
         }
     }
 
-    //判断是否是退出命令（包内可见，供测试使用）
-    static boolean isExitCommand(String input) {
-        String trimmed = input.trim();
-        return "exit".equalsIgnoreCase(trimmed) || "quit".equalsIgnoreCase(trimmed);
-    }
-
-    //判断是否是清空历史命令（包内可见，供测试使用）
-    static boolean isClearCommand(String input) {
-        String trimmed = input.trim();
-        return "clear".equalsIgnoreCase(trimmed) || "/clear".equalsIgnoreCase(trimmed);
+    private static void printReplHelp() {
+        System.out.println(ReplCommandParser.formatHelp());
     }
 
     private static void printKeyHelp() {

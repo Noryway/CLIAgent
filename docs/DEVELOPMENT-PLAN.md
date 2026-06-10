@@ -36,6 +36,7 @@
 | Day 4 | ✅ | REPL 多轮对话、`clear`/`exit`、`clearHistory()` | `feat: Day 4 — REPL...` |
 | Day 5 | ✅ | `AgentBudget` 停滞检测 + 硬轮数兜底 | `feat: Day 5 — AgentBudget...` |
 | Day 6 | ✅ | `PathGuard` + `CommandGuard` 策略围栏 | `feat: Day 6 — PathGuard...` |
+| Day 7 | ✅ | `ReplCommandParser` 斜杠命令 | `feat: Day 7 — ReplCommandParser` |
 
 ### 当前架构（Day 5）
 
@@ -55,7 +56,7 @@ Main
 
 - [x] 停滞检测（连续相同 tool+args 死循环）
 - [x] PathGuard / CommandGuard（工具安全围栏）
-- [ ] 命令解析器（`/` 未知命令不发给 LLM）
+- [x] 命令解析器（`/` 未知命令不发给 LLM）
 - [ ] Token 统计与 `/context` 可观测
 - [ ] 流式 SSE 输出
 - [ ] 长期记忆 / Plan / RAG（阶段 3 选一个）
@@ -71,7 +72,7 @@ Main
 |-----|------|----------|------------|
 | Day 5 | ✅ AgentBudget 停滞检测 | `agent/AgentBudget.java` | 连续 3 次相同工具调用自动停止 |
 | Day 6 | ✅ 策略围栏 | `policy/PathGuard.java`、`policy/CommandGuard.java` | 读写/命令限制在项目沙箱内 |
-| Day 7 | ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
+| Day 7 | ✅ ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
 | Day 8 | Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
 | Day 9 | projectPath 显式化 | `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
 | Day 10 | 流式 SSE（可选） | `DeepSeekClient` 增强 | `assistant>` 逐字输出 |
@@ -264,13 +265,13 @@ public final class ReplCommandParser {
 
 ### 任务清单
 
-- [ ] 创建 `ReplCommandParser`
-- [ ] `Main.runRepl()` 改用 `switch (command.type())`
-- [ ] 删除 `Main.isExitCommand` / `isClearCommand`（逻辑迁入 Parser）
-- [ ] `HELP` 打印可用命令列表
-- [ ] `UNKNOWN` 打印「未知命令」+ 帮助，不调 API
-- [ ] 补充 `/exit`、`/help` 测试
-- [ ] `mvn test` 全绿
+- [x] 创建 `ReplCommandParser`
+- [x] `Main.runRepl()` 改用 `switch (command.type())`
+- [x] 删除 `Main.isExitCommand` / `isClearCommand`（逻辑迁入 Parser）
+- [x] `HELP` 打印可用命令列表
+- [x] `UNKNOWN` 打印「未知命令」+ 帮助，不调 API
+- [x] 补充 `/exit`、`/help` 测试
+- [x] `mvn test` 全绿
 
 ### 验收标准
 
@@ -581,4 +582,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-09 · Day 6 完成态 · 阶段 2 进行中（下一步 Day 7）*
+*文档版本：2026-06-09 · Day 7 完成态 · 阶段 2 进行中（下一步 Day 8）*
