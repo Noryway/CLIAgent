@@ -41,14 +41,16 @@
 | Day 9 | ✅ | projectPath 显式化 + `--cwd` | `feat: Day 9 — explicit projectPath...` |
 | Day 10 | ✅ | SSE 流式 + `--stream` | `feat: Day 10 — streaming SSE...` |
 | 阶段 3 | ✅ | Memory 长期记忆 | `feat: Memory — long-term /save...` |
+| 阶段 4 | ✅ | Plan-and-Execute | `feat: Plan — Plan-and-Execute...` |
 
-### 当前架构（Memory 完成态）
+### 当前架构（Plan 完成态）
 
 ```text
 Main
   ├─ parseCliArgs()：--cwd / --stream
-  ├─ MemoryManager.setProjectPath() + ToolRegistry.setProjectPath()
-  ├─ ReplCommandParser：exit/clear/help/context/save/memory
+  ├─ MemoryManager + ToolRegistry.setProjectPath()
+  ├─ ReplCommandParser：exit/clear/help/context/save/memory/plan
+  ├─ PlanParser + PlanExecutor（/plan）
   └─ Agent(llm, registry, memoryManager)
         ├─ refreshSystemPrompt()：长期记忆 → system
         ├─ run(streaming)：ReAct + AgentBudget
@@ -56,14 +58,16 @@ Main
         └─ clearHistory()：只清短期 history
 
 MemoryStore → ~/.cliagent/memory.json
+PlanExecutor → 拓扑排序 + 顺序 agent.run(stepPrompt)
 DeepSeekClient → 非流式 / SSE 流式双路径
 ```
 
 ### 已知缺口（对比 paicli，可选后续）
 
 - [x] 长期记忆 Memory（`/save`、跨会话 JSON）
-- [ ] Plan-and-Execute
+- [x] Plan-and-Execute（`/plan`、顺序执行）
 - [ ] RAG 代码检索
+- [ ] Plan 并行批次 / 失败 replan / Enter 审批
 - [ ] LLM 短期记忆压缩（paicli ContextCompressor）
 - [ ] `/save --global` 全局记忆 scope
 
@@ -509,20 +513,63 @@ you> /memory list                  # 重启后仍在
 cat ~/.cliagent/memory.json        # 查看持久化文件
 ```
 
-### 路线 B：Plan-and-Execute
+### 路线 B：Plan-and-Execute（✅ 已完成）
 
 ```text
 plan/
-├── Task.java
-├── PlanParser.java
-└── PlanExecutor.java
+├── Task.java              # 步骤节点 + dependencies + 状态
+├── ExecutionPlan.java     # DAG + 拓扑排序 + formatSummary()
+├── PlanParser.java          # LLM 拆计划 + 简单任务 fallback
+└── PlanExecutor.java      # 顺序执行，每步委托 Agent.run()
 
 命令：/plan <复杂任务>
 ```
 
-参考 paicli：`com/paicli/plan/Task.java`、Planner SubAgent。
+参考 paicli：`Planner`、`PlanExecuteAgent`、`ExecutionPlan`（裁剪版：无并行批次、无 HITL、无 replan）。
 
-**验收**：输入「创建一个 Spring Boot 项目并写 HelloController」，输出分步计划并逐步执行。
+#### 任务清单
+
+- [x] Step 1：`Task` + `ExecutionPlan` + `PlanParser` + 单元测试
+- [x] Step 2：`ReplCommandParser` + `Main` 处理 `/plan`
+- [x] Step 3：`PlanExecutor` 顺序执行 + `buildTaskPrompt()` 注入前序结果
+- [x] Step 4：README 与本文档进度同步
+- [x] `mvn test` 全绿
+
+#### 验收标准
+
+- [x] `/plan 列出目录，然后读取 README` → 展示 ≥2 步计划并顺序执行
+- [x] 步骤有依赖时，后一步等前一步完成
+- [x] 某步失败 → 标记 FAILED 并终止
+- [x] 普通输入仍走 ReAct，与 `/plan` 不冲突
+
+#### commit 建议
+
+```text
+feat: Plan — Plan-and-Execute with /plan command
+```
+
+#### 手动 demo 清单
+
+```bash
+mvn clean package -q
+java -jar target/CLIAgent-1.0-SNAPSHOT.jar
+
+# 1. 多步计划 + 工具
+you> /plan 在当前目录创建 plan-demo 文件夹，然后列出 plan-demo 目录内容
+
+# 2. 简单单步（不调规划 LLM，本地 fallback）
+you> /plan 列出当前目录的文件
+
+# 3. 与 Memory 共存
+you> /save 构建命令是 mvn clean package
+you> /plan 读取 pom.xml 并告诉我项目名
+
+# 4. 对比普通 ReAct
+you> 列出当前目录          # 仍走单轮 ReAct，不拆计划
+
+# 5. 完整面试链（约 5 分钟）
+# REPL → 工具 → /context → PathGuard → --stream → /save → /plan → clear
+```
 
 ### 路线 C：RAG
 
@@ -616,6 +663,13 @@ rag/
 - [x] 简历可写：「实现跨会话 `/save` 长期记忆，对标 paicli 裁剪版」
 - [x] 能完成 demo：`/save` → `clear` → 仍记得 → 重启仍在
 
+### 阶段 4 完成（Plan 路线）
+
+- [x] 有可深挖模块：Plan-and-Execute
+- [x] 模块有独立单元测试（`ExecutionPlanTest`、`PlanParserTest`、`PlanExecutorTest`）
+- [x] 简历可写：「实现 `/plan` 任务拆解 + DAG 拓扑顺序执行，对标 paicli 裁剪版」
+- [x] 能完成 demo：`/plan` 多步任务 → 展示计划 → 逐步执行 → 汇总结果
+
 ---
 
 ## 十四、新会话恢复提示词（复制用）
@@ -638,4 +692,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-10 · Memory 完成态 · 阶段 3（路线 A）✅*
+*文档版本：2026-06-10 · Plan 完成态 · 阶段 3 Memory ✅ · 阶段 4 Plan ✅*

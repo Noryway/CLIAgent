@@ -16,6 +16,7 @@ public final class ReplCommandParser {
         MEMORY_LIST,//列出长期记忆
         MEMORY_SEARCH,//搜索长期记忆
         MEMORY_CLEAR,//清空当前项目长期记忆
+        PLAN,//Plan-and-Execute 复杂任务
         UNKNOWN//未知命令
     }
 
@@ -66,6 +67,9 @@ public final class ReplCommandParser {
         if (isMemoryCommand(trimmed)) {
             return parseMemoryCommand(trimmed);
         }
+        if (isPlan(trimmed)) {
+            return parsePlan(trimmed);
+        }
         if (trimmed.startsWith("/")) {
             return new ParsedCommand(CommandType.UNKNOWN, trimmed);
         }
@@ -85,8 +89,16 @@ public final class ReplCommandParser {
                   /memory list               列出当前项目长期记忆
                   /memory search <关键词>    搜索长期记忆
                   /memory clear              清空当前项目长期记忆（不影响 /clear）
+                  /plan <复杂任务>           Plan-and-Execute：拆解并逐步执行
                   其他输入                   发送给 Agent（进入 ReAct 循环）
                 """;
+    }
+
+    private static ParsedCommand parsePlan(String trimmed) {
+        if (equalsIgnoreCase(trimmed, "/plan")) {
+            return new ParsedCommand(CommandType.PLAN, "");
+        }
+        return new ParsedCommand(CommandType.PLAN, trimmed.substring(6).trim());
     }
 
     private static ParsedCommand parseMemorySave(String trimmed) {
@@ -123,6 +135,11 @@ public final class ReplCommandParser {
     private static boolean isMemoryCommand(String trimmed) {
         return equalsIgnoreCase(trimmed, "/memory")
                 || startsWithIgnoreCase(trimmed, "/memory ");
+    }
+
+    private static boolean isPlan(String trimmed) {
+        return equalsIgnoreCase(trimmed, "/plan")
+                || startsWithIgnoreCase(trimmed, "/plan ");
     }
 
     private static boolean isExit(String trimmed) {

@@ -100,6 +100,19 @@ class ReplCommandParserTest {
     }
 
     @Test
+    void parsesPlanCommands() {
+        assertEquals(ReplCommandParser.CommandType.PLAN,
+                ReplCommandParser.parse("/plan").type());
+        assertEquals("", ReplCommandParser.parse("/plan").payload());
+        assertEquals(ReplCommandParser.CommandType.PLAN,
+                ReplCommandParser.parse("/plan 创建目录并写 README").type());
+        assertEquals("创建目录并写 README",
+                ReplCommandParser.parse("/plan 创建目录并写 README").payload());
+        assertEquals("列出文件",
+                ReplCommandParser.parse("  /PLAN   列出文件  ").payload());
+    }
+
+    @Test
     void formatHelpListsCoreCommands() {
         String help = ReplCommandParser.formatHelp();
 
@@ -109,6 +122,7 @@ class ReplCommandParserTest {
         assertTrue(help.contains("/context"));
         assertTrue(help.contains("/save"));
         assertTrue(help.contains("/memory list"));
+        assertTrue(help.contains("/plan"));
         assertNull(ReplCommandParser.parse("/help").payload());
     }
 }

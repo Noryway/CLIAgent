@@ -6,7 +6,10 @@ import com.cliagent.cli.ReplCommandParser.CommandType;
 import com.cliagent.cli.ReplCommandParser.ParsedCommand;
 import com.cliagent.config.EnvConfig;
 import com.cliagent.llm.DeepSeekClient;
+import com.cliagent.llm.LlmClient;
 import com.cliagent.memory.MemoryManager;
+import com.cliagent.plan.PlanExecutor;
+import com.cliagent.plan.PlanParser;
 import com.cliagent.tool.ToolRegistry;
 
 import java.io.BufferedReader;
@@ -61,7 +64,7 @@ public class Main {
         Agent agent = new Agent(client, registry, memoryManager);
 
         if (cli.promptArgs().length == 0) {
-            runRepl(agent, memoryManager, cli.projectPath(), cli.streaming());
+            runRepl(client, agent, memoryManager, cli.projectPath(), cli.streaming());
         } else {
             runOnce(agent, String.join(" ", cli.promptArgs()), cli.streaming());
         }
@@ -104,7 +107,10 @@ public class Main {
     }
 
     //REPL模式
-    private static void runRepl(Agent agent, MemoryManager memoryManager, String projectPath, boolean streaming) {
+    private static void runRepl(LlmClient client, Agent agent, MemoryManager memoryManager,
+                                String projectPath, boolean streaming) {
+        PlanParser planParser = new PlanParser(client);
+        PlanExecutor planExecutor = new PlanExecutor(planParser);
         System.out.println("CLIAgent 已启动，项目目录: " + projectPath);
         if (streaming) {
             System.out.println("流式输出已启用（--stream）。");
@@ -142,6 +148,7 @@ public class Main {
                     memoryManager.clearProjectMemories();
                     System.out.println("🗑️ 当前项目的长期记忆已清空。");
                 }
+                case PLAN -> handlePlan(planExecutor, agent, command.payload(), streaming);
                 case UNKNOWN -> {
                     System.out.println("❌ 未知命令: " + command.payload());
                     printReplHelp();
@@ -192,6 +199,22 @@ public class Main {
             System.out.println("💾 已保存到长期记忆: " + content.trim());
         } catch (IllegalArgumentException | IllegalStateException e) {
             System.out.println("❌ " + e.getMessage());
+        }
+    }
+
+    private static void handlePlan(PlanExecutor planExecutor, Agent agent, String goal, boolean streaming) {
+        if (goal == null || goal.isBlank()) {
+            System.out.println("❌ 请提供计划任务，例如 /plan 创建目录并写 README");
+            return;
+        }
+        try {
+            System.out.println("📋 正在规划: " + goal.trim());
+            String result = planExecutor.execute(goal, agent, streaming);
+            if (!streaming || result != null && !result.isBlank()) {
+                System.out.println(result);
+            }
+        } catch (IOException e) {
+            System.err.println("❌ 计划失败: " + e.getMessage());
         }
     }
 

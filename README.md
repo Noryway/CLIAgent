@@ -21,6 +21,7 @@
 | Day 9 | ✅ | `projectPath` 显式沙箱 + `--cwd` 启动参数 |
 | Day 10 | ✅ | SSE 流式输出 + `--stream` 启动参数 |
 | 阶段 3 | ✅ | Memory 长期记忆（`/save` + `~/.cliagent/memory.json`） |
+| 阶段 4 | ✅ | Plan-and-Execute（`/plan` + 依赖拓扑顺序执行） |
 
 ## 功能概览
 
@@ -37,7 +38,8 @@
 - **Token 可观测**：`Agent` 累计 `usage` token；`/context` 查看 history 条数与用量（不调 API）
 - **流式 SSE**：`--stream` 启用；`StreamListener` 逐 chunk 打印 `assistant>` 回答（ReAct + tool_calls 仍可用）
 - **长期记忆 Memory**：`/save` 持久化到 `~/.cliagent/memory.json`；`/memory list|search|clear`；`/clear` 不清长期记忆；Agent 每轮注入 system
-- **单元测试**：LLM + 工具 + Agent + Memory + REPL 命令 Mock 测试（不依赖 API Key）
+- **Plan-and-Execute**：`/plan <复杂任务>` → LLM 拆步骤 → 按依赖拓扑顺序逐步委托 Agent 执行
+- **单元测试**：LLM + 工具 + Agent + Memory + Plan + REPL 命令 Mock 测试（不依赖 API Key）
 
 ### 内置工具（Day 2）
 
@@ -101,6 +103,7 @@ java -jar target/CLIAgent-1.0-SNAPSHOT.jar --stream "用三句话介绍 ReAct"
 | `/memory list` | 列出当前项目全部长期记忆 |
 | `/memory search <词>` | 关键词搜索长期记忆 |
 | `/memory clear` | 清空**当前项目**长期记忆（不影响 `/clear`） |
+| `/plan <复杂任务>` | Plan-and-Execute：拆解计划并逐步执行（普通输入仍走 ReAct） |
 | `/xxx`（未知） | 本地提示，不调用 API |
 | 空行 | 跳过，不调用 API |
 | 其他输入 | 发送给 Agent，进入 ReAct 循环 |
@@ -192,6 +195,40 @@ you> /memory clear            # 只清当前项目的长期记忆
 
 > 长期记忆按 **projectPath** 隔离：在目录 A 启动 `/save` 的内容，在 `--cwd B` 下不可见。
 
+### Plan-and-Execute（`/plan`）
+
+复杂多步任务走 **先规划、后执行**；普通单行输入仍走 ReAct。
+
+| 组件 | 作用 |
+|------|------|
+| `PlanParser` | LLM 生成 JSON 计划；简单任务 fallback 为单步 |
+| `ExecutionPlan` | 任务 DAG + 拓扑排序 + `formatSummary()` |
+| `Task` | 步骤节点：`id`、`description`、`dependencies`、状态 |
+| `PlanExecutor` | 展示计划 → 按依赖顺序逐步 `agent.run(stepPrompt)` |
+
+```bash
+you> /plan 在当前目录创建 plan-demo 文件夹，然后列出 plan-demo 目录内容
+
+📋 正在规划: ...
+📋 执行计划: ...
+   1. [ ] 创建 plan-demo 文件夹 (依赖: 无)
+   2. [ ] 列出 plan-demo 目录内容 (依赖: task_1)
+
+🚀 开始执行计划...
+
+▶️ [task_1] 步骤 1/2: 创建 plan-demo 文件夹
+assistant> ...
+✅ [task_1] 完成
+
+▶️ [task_2] 步骤 2/2: 列出 plan-demo 目录内容
+assistant> ...
+✅ [task_2] 完成
+
+✅ 计划执行完成！
+```
+
+> 与 paicli 裁剪版对比：v1 **顺序执行**（不做并行批次）；不做 Enter 审批 / 失败 replan。
+
 ### 预期输出
 
 **REPL 多轮对话：**
@@ -249,6 +286,20 @@ you> 这个项目怎么构建？
 assistant> （参考 system 中的长期记忆回答）
 ```
 
+**Plan-and-Execute：**
+
+```text
+you> /plan 列出当前目录的文件
+📋 正在规划: 列出当前目录的文件
+📋 执行计划: 直接执行简单任务：...
+🚀 开始执行计划...
+▶️ [task_1] 步骤 1/1: 列出当前目录的文件
+  [tool] list_dir → ...
+assistant> 当前目录包含 ...
+✅ [task_1] 完成
+✅ 计划执行完成！
+```
+
 ## 项目结构
 
 ```text
@@ -257,7 +308,7 @@ CLIAgent/
 ├── .env.example
 ├── README.md
 ├── docs/
-│   ├── DEVELOPMENT-PLAN.md   # 完整开发计划（Day 5–10 + 阶段 3）
+│   ├── DEVELOPMENT-PLAN.md   # 完整开发计划（Day 5–10 + 阶段 3/4）
 │   └── SESSION-HANDOFF.md
 └── src/
     ├── main/java/com/cliagent/
@@ -271,6 +322,11 @@ CLIAgent/
     │   │   ├── MemoryEntry.java
     │   │   ├── MemoryStore.java
     │   │   └── MemoryManager.java
+    │   ├── plan/
+    │   │   ├── Task.java
+    │   │   ├── ExecutionPlan.java
+    │   │   ├── PlanParser.java
+    │   │   └── PlanExecutor.java
     │   ├── config/
     │   │   └── EnvConfig.java
     │   ├── policy/
@@ -294,6 +350,10 @@ CLIAgent/
         ├── memory/
         │   ├── MemoryStoreTest.java
         │   └── MemoryManagerTest.java
+        ├── plan/
+        │   ├── ExecutionPlanTest.java
+        │   ├── PlanParserTest.java
+        │   └── PlanExecutorTest.java
         ├── llm/
         │   ├── MessageTest.java
         │   └── DeepSeekClientTest.java
@@ -310,7 +370,8 @@ CLIAgent/
 Main
   ├── parseCliArgs()：--cwd / --stream
   ├── MemoryManager + ToolRegistry.setProjectPath()
-  ├── ReplCommandParser：exit/clear/help/context/save/memory
+  ├── ReplCommandParser：exit/clear/help/context/save/memory/plan
+  ├── PlanParser + PlanExecutor（/plan）
   └── Agent(llm, registry, memoryManager)
         ├── run() 前 refreshSystemPrompt()：注入长期记忆
         ├── ReAct + AgentBudget + 可选 SSE 流式
@@ -318,6 +379,7 @@ Main
         └── clearHistory()：只清短期 history
 
 MemoryStore → ~/.cliagent/memory.json（跨会话）
+PlanExecutor → 每步 enriched prompt 委托 Agent.run()
 ```
 
 ## 配置说明
@@ -370,6 +432,9 @@ mvn clean package -DskipTests
 # 只跑 Memory 测试
 mvn test -Dtest=MemoryStoreTest,MemoryManagerTest
 
+# 只跑 Plan 测试
+mvn test -Dtest=ExecutionPlanTest,PlanParserTest,PlanExecutorTest
+
 # 开发态 REPL
 mvn -q exec:java -Dexec.mainClass="com.cliagent.Main"
 
@@ -407,6 +472,8 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="--stream"
 | 流式 SSE + `--stream` | ✅ | `StreamListener` + SSE 解析 + 逐字打印 |
 | 长期记忆 Memory | ✅ | `/save` + JSON 持久化 + system 注入 |
 | `/clear` vs `/memory clear` | ✅ | 短期 history vs 长期 memory 分离 |
+| Plan-and-Execute | ✅ | `/plan` + 拓扑排序 + 顺序逐步执行 |
+| ReAct vs Plan 分工 | ✅ | 普通输入 ReAct；复杂多步 `/plan` |
 
 ## 开发计划
 
@@ -440,7 +507,18 @@ mvn -q exec:java -Dexec.mainClass="com.cliagent.Main" -Dexec.args="--stream"
 | Step 3 | ✅ | Agent 注入 | `buildContextBlock()` → system prompt |
 | Step 4 | ✅ | 文档 | README + DEVELOPMENT-PLAN |
 
-**未选路线（后续可选）**：Plan-and-Execute、RAG
+### 阶段 4（Plan-and-Execute）✅ 已完成
+
+主题：**复杂任务拆解 + 步骤状态机，面试可讲 10 分钟**
+
+| Step | 状态 | 模块 | 关键产出 |
+|------|------|------|----------|
+| Step 1 | ✅ | Plan 核心 | `Task` / `ExecutionPlan` / `PlanParser` |
+| Step 2 | ✅ | REPL 命令 | `/plan <任务>` |
+| Step 3 | ✅ | 执行器 | `PlanExecutor` 顺序委托 `Agent.run()` |
+| Step 4 | ✅ | 文档 | README + DEVELOPMENT-PLAN |
+
+**未选路线（后续可选）**：RAG、Plan 并行批次、失败 replan
 
 ### 开发规范
 
@@ -459,19 +537,17 @@ cd /home/ubuntu/simple-agent-cli
 git status
 git diff
 
-# 2. 暂存 Memory 阶段（不要 add .env）
+# 2. 暂存 Plan 阶段（不要 add .env）
 git add README.md docs/DEVELOPMENT-PLAN.md \
   src/main/java/com/cliagent/Main.java \
-  src/main/java/com/cliagent/agent/Agent.java \
   src/main/java/com/cliagent/cli/ReplCommandParser.java \
-  src/main/java/com/cliagent/memory/ \
-  src/test/java/com/cliagent/memory/ \
-  src/test/java/com/cliagent/agent/AgentTest.java \
+  src/main/java/com/cliagent/plan/ \
+  src/test/java/com/cliagent/plan/ \
   src/test/java/com/cliagent/cli/ReplCommandParserTest.java
 
 # 3. 提交
 git commit -m "$(cat <<'EOF'
-feat: Memory — long-term /save and /memory commands
+feat: Plan — Plan-and-Execute with /plan command
 
 EOF
 )"
