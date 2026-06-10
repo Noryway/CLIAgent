@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -96,5 +97,54 @@ class DeepSeekClientTest {
         assertEquals("{}", resp.toolCalls().get(0).function().arguments());
         assertEquals(10, resp.inputTokens());
         assertEquals(5, resp.outputTokens());
+    }
+
+    @Test
+    void buildRequestBodySupportsStreamFlag() {
+        ObjectNode body = client.buildRequestBody(
+                List.of(LlmClient.Message.user("hi")),
+                List.of(),
+                true
+        );
+        assertTrue(body.path("stream").asBoolean(false));
+    }
+
+    @Test
+    void parsesStreamResponseContentDeltas() throws Exception {
+        String sse = """
+                data: {"choices":[{"delta":{"role":"assistant","content":"Hello"}}]}
+
+                data: {"choices":[{"delta":{"content":" world"}}]}
+
+                data: {"usage":{"prompt_tokens":3,"completion_tokens":2}}
+
+                data: [DONE]
+
+                """;
+
+        LlmClient.ChatResponse resp = client.parseStreamResponse(sse, StreamListener.NO_OP);
+
+        assertEquals("assistant", resp.role());
+        assertEquals("Hello world", resp.content());
+        assertFalse(resp.hasToolCalls());
+        assertEquals(3, resp.inputTokens());
+        assertEquals(2, resp.outputTokens());
+    }
+
+    @Test
+    void parseStreamResponseInvokesListener() throws Exception {
+        String sse = """
+                data: {"choices":[{"delta":{"content":"Re"}}]}
+
+                data: {"choices":[{"delta":{"content":"Act"}}]}
+
+                data: [DONE]
+
+                """;
+
+        List<String> deltas = new ArrayList<>();
+        client.parseStreamResponse(sse, deltas::add);
+
+        assertEquals(List.of("Re", "Act"), deltas);
     }
 }

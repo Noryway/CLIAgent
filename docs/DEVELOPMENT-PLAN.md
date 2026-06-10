@@ -39,22 +39,28 @@
 | Day 7 | ✅ | `ReplCommandParser` 斜杠命令 | `feat: Day 7 — ReplCommandParser` |
 | Day 8 | ✅ | Token 累计 + `/context` | `feat: Day 8 — token tracking...` |
 | Day 9 | ✅ | projectPath 显式化 + `--cwd` | `feat: Day 9 — explicit projectPath...` |
+| Day 10 | ✅ | SSE 流式 + `--stream` | `feat: Day 10 — streaming SSE...` |
 
-### 当前架构（Day 9）
+### 当前架构（Day 10）
 
 ```text
 Main
-  ├─ parseCliArgs()：--cwd + prompt 分离
-  ├─ 无参数 → runRepl()：打印 projectPath
-  ├─ 有参数 → runOnce()：单次对话
+  ├─ parseCliArgs()：--cwd / --stream + prompt 分离
+  ├─ 无参数 → runRepl(streaming)
+  ├─ 有参数 → runOnce(streaming)
   ├─ EnvConfig（-D > env > .env）
   ├─ ToolRegistry.setProjectPath()（PathGuard + execute_command cwd）
   ├─ ReplCommandParser（exit/clear/help/context）
   └─ Agent
+        ├─ run(input, streaming)：ReAct + 可选 SSE 逐字打印
         ├─ history + token 统计（跨 run 共享）
-        ├─ ReAct while + AgentBudget（硬轮数 10 + 停滞窗口 3）
+        ├─ AgentBudget（硬轮数 10 + 停滞窗口 3）
         ├─ getContextStatus()（/context）
         └─ clearHistory()（只保留 system，token 归零）
+
+DeepSeekClient
+  ├─ chat(2) → stream:false → parseResponse
+  └─ chat(3, StreamListener) → stream:true → SSE 逐行解析
 ```
 
 ### 已知缺口（对比 paicli，阶段 2 要补）
@@ -63,7 +69,7 @@ Main
 - [x] PathGuard / CommandGuard（工具安全围栏）
 - [x] 命令解析器（`/` 未知命令不发给 LLM）
 - [x] Token 统计与 `/context` 可观测
-- [ ] 流式 SSE 输出
+- [x] 流式 SSE 输出（`--stream`）
 - [ ] 长期记忆 / Plan / RAG（阶段 3 选一个）
 
 ---
@@ -80,7 +86,7 @@ Main
 | Day 7 | ✅ ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
 | Day 8 | ✅ Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
 | Day 9 | ✅ projectPath 显式化 | `Main` + `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
-| Day 10 | 流式 SSE（可选） | `DeepSeekClient` 增强 | `assistant>` 逐字输出 |
+| Day 10 | ✅ SSE 流式 | `StreamListener` + `DeepSeekClient` + `--stream` | `assistant>` 逐字输出 |
 
 ---
 
@@ -410,19 +416,27 @@ feat: Day 9 — explicit projectPath for tool sandbox
 ```text
 src/main/java/com/cliagent/
 ├── llm/
-│   ├── LlmClient.java         # 增加 chatStreaming 或 Consumer 回调
-│   └── DeepSeekClient.java    # SSE 解析 data: {...}
-├── agent/Agent.java           # 流式时逐 chunk 打印
-└── Main.java                  # 可选 --stream 开关
+│   ├── StreamListener.java   # 新建
+│   ├── LlmClient.java        # chat(..., StreamListener)
+│   └── DeepSeekClient.java   # SSE 解析 data: {...}
+├── agent/Agent.java          # run(input, streaming)
+└── Main.java                 # --stream 开关
+
+src/test/java/com/cliagent/
+├── llm/DeepSeekClientTest.java  # Mock SSE 解析
+├── agent/AgentTest.java         # streaming chat 调用
+└── MainTest.java                # --stream 参数解析
 ```
 
 ### 任务清单
 
-- [ ] `buildRequestBody` 支持 `stream: true`
-- [ ] 解析 SSE `data: [DONE]` 结束
-- [ ] REPL 默认非流式，加 `--stream` 或 `/stream on` 启用
-- [ ] Mock 测试流式解析（不依赖 API）
-- [ ] 流式模式下 tool_calls 仍能正确 ReAct（可分两期：先纯文本流）
+- [x] `buildRequestBody` 支持 `stream: true`
+- [x] 解析 SSE `data: [DONE]` 结束
+- [x] REPL 默认非流式，加 `--stream` 启用
+- [x] Mock 测试流式解析（不依赖 API）
+- [x] 流式模式下 tool_calls 仍能正确 ReAct（delta 合并）
+- [x] README 与本文档进度同步
+- [x] `mvn test` 全绿
 
 ### 验收标准
 
@@ -557,11 +571,12 @@ rag/
 
 ### 阶段 2 完成（Day 10 后）
 
-- [ ] Agent 有停滞检测，不会傻循环
-- [ ] 工具有 PathGuard + CommandGuard
-- [ ] REPL 有统一命令解析器 + `/help` + `/context`
-- [ ] README 与本文档进度同步
-- [ ] 能完成 5 分钟面试演示：REPL 多轮 → 工具调用 → clear → 安全拒绝 → `/context`
+- [x] Agent 有停滞检测，不会傻循环
+- [x] 工具有 PathGuard + CommandGuard
+- [x] REPL 有统一命令解析器 + `/help` + `/context`
+- [x] 流式 SSE + `--stream` 可选启用
+- [x] README 与本文档进度同步
+- [x] 能完成 5 分钟面试演示：REPL 多轮 → 工具调用 → clear → 安全拒绝 → `/context` → `--stream`
 
 ### 阶段 3 完成（选一个路线后）
 
@@ -591,4 +606,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-10 · Day 9 完成态 · 阶段 2 进行中（下一步 Day 10）*
+*文档版本：2026-06-10 · Day 10 完成态 · 阶段 2 ✅ · 下一步阶段 3（Memory / Plan / RAG 三选一）*

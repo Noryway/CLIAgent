@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class MainTest {
 
@@ -36,6 +37,27 @@ class MainTest {
         assertEquals(2, cli.promptArgs().length);
         assertEquals("hello", cli.promptArgs()[0]);
         assertEquals("world", cli.promptArgs()[1]);
+        assertFalse(cli.streaming());
+    }
+
+    @Test
+    void parseCliArgsEnablesStreamingFlag() {
+        Main.ParsedCliArgs cli = Main.parseCliArgs(new String[]{"--stream", "hello"});
+
+        assertTrue(cli.streaming());
+        assertEquals(1, cli.promptArgs().length);
+        assertEquals("hello", cli.promptArgs()[0]);
+    }
+
+    @Test
+    void parseCliArgsStreamWithCwd(@TempDir Path tempDir) {
+        Main.ParsedCliArgs cli = Main.parseCliArgs(new String[]{
+                "--stream", "--cwd", tempDir.toString(), "列出文件"
+        });
+
+        assertTrue(cli.streaming());
+        assertEquals(tempDir.toAbsolutePath().normalize().toString(), cli.projectPath());
+        assertEquals("列出文件", cli.promptArgs()[0]);
     }
 
     @Test

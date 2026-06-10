@@ -31,9 +31,16 @@ public class Agent {
     }
 
     /**
-     * 处理一轮用户输入：ReAct 循环直到 LLM 返回纯文本或达到迭代上限。
+     * 处理一轮用户输入：ReAct 循环直到 LLM 返回纯文本或达到迭代上限（非流式）。
      */
     public String run(String userInput) throws IOException {
+        return run(userInput, false);
+    }
+
+    /**
+     * 处理一轮用户输入。{@code streaming=true} 时最终文本回答逐 chunk 打印到 stdout。
+     */
+    public String run(String userInput, boolean streaming) throws IOException {
         history.add(Message.user(userInput));
         AgentBudget budget = AgentBudget.defaults();
 
@@ -44,7 +51,16 @@ public class Agent {
             }
 
             budget.beginIteration();
-            ChatResponse response = llm.chat(history, registry.getToolDefinitions());
+            boolean[] prefixPrinted = {false};
+            ChatResponse response = streaming
+                    ? llm.chat(history, registry.getToolDefinitions(), contentDelta -> {
+                        if (!prefixPrinted[0]) {
+                            System.out.print("assistant> ");
+                            prefixPrinted[0] = true;
+                        }
+                        System.out.print(contentDelta);
+                    })
+                    : llm.chat(history, registry.getToolDefinitions());
             recordTokens(response);
 
             //如果响应有工具调用，则执行工具
@@ -65,6 +81,9 @@ public class Agent {
 
             String answer = response.content() != null ? response.content() : "";
             history.add(Message.assistant(answer));
+            if (streaming && prefixPrinted[0]) {
+                System.out.println();
+            }
             return answer;
         }
     }

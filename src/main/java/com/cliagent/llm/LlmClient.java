@@ -10,8 +10,13 @@ import java.util.List;
  */
 public interface LlmClient {
 
-    //发送消息给LLM，并返回响应
     ChatResponse chat(List<Message> messages, List<Tool> tools) throws IOException;
+
+    /** 流式 chat；默认实现忽略 listener，走非流式 {@link #chat(List, List)}。 */
+    default ChatResponse chat(List<Message> messages, List<Tool> tools, StreamListener listener)
+            throws IOException {
+        return chat(messages, tools);
+    }
 
     String getModelName();
 

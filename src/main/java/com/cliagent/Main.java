@@ -24,15 +24,15 @@ import java.util.List;
  *   java -jar CLIAgent.jar                              # REPL，沙箱=当前目录
  *   java -jar CLIAgent.jar --cwd /path/to/project       # REPL，指定项目目录
  *   java -jar CLIAgent.jar "你好"                        # 单次对话
- *   java -jar CLIAgent.jar --cwd /path "列出目录文件"
+ *   java -jar CLIAgent.jar --stream "用三句话介绍 ReAct"
  * </pre>
  */
 public class Main {
 
     private static final String DEFAULT_MODEL = "deepseek-chat";
 
-    /** 剥离 {@code --cwd} 后的 CLI 参数与解析出的项目根目录。 */
-    record ParsedCliArgs(String projectPath, String[] promptArgs) {
+    /** 剥离 {@code --cwd} / {@code --stream} 后的 CLI 参数、项目根与流式开关。 */
+    record ParsedCliArgs(String projectPath, String[] promptArgs, boolean streaming) {
     }
 
     public static void main(String[] args) {
@@ -58,18 +58,19 @@ public class Main {
         Agent agent = new Agent(client, registry);
 
         if (cli.promptArgs().length == 0) {
-            runRepl(agent, cli.projectPath());
+            runRepl(agent, cli.projectPath(), cli.streaming());
         } else {
-            runOnce(agent, String.join(" ", cli.promptArgs()));
+            runOnce(agent, String.join(" ", cli.promptArgs()), cli.streaming());
         }
     }
 
     /**
-     * 解析命令行：提取 {@code --cwd}，其余参数作为单次模式的 user prompt。
+     * 解析命令行：提取 {@code --cwd} / {@code --stream}，其余参数作为单次模式的 user prompt。
      * 未指定 {@code --cwd} 时，沙箱根为 {@code user.dir} 的绝对规范化路径。
      */
     static ParsedCliArgs parseCliArgs(String[] args) {
         String cwdOverride = null;
+        boolean streaming = false;
         List<String> promptArgs = new ArrayList<>();
         if (args != null) {
             for (int i = 0; i < args.length; i++) {
@@ -78,13 +79,15 @@ public class Main {
                         throw new IllegalArgumentException("--cwd 需要指定目录路径");
                     }
                     cwdOverride = args[++i];
+                } else if ("--stream".equals(args[i])) {
+                    streaming = true;
                 } else {
                     promptArgs.add(args[i]);
                 }
             }
         }
         String projectPath = resolveProjectPath(cwdOverride);
-        return new ParsedCliArgs(projectPath, promptArgs.toArray(String[]::new));
+        return new ParsedCliArgs(projectPath, promptArgs.toArray(String[]::new), streaming);
     }
 
     static String resolveProjectPath(String cwdOverride) {
@@ -98,8 +101,11 @@ public class Main {
     }
 
     //REPL模式
-    private static void runRepl(Agent agent, String projectPath) {
+    private static void runRepl(Agent agent, String projectPath, boolean streaming) {
         System.out.println("CLIAgent 已启动，项目目录: " + projectPath);
+        if (streaming) {
+            System.out.println("流式输出已启用（--stream）。");
+        }
         System.out.println("输入 help 查看命令，exit 退出。");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
@@ -134,8 +140,12 @@ public class Main {
                         continue;
                     }
                     try {
-                        String answer = agent.run(command.payload());
-                        System.out.println("assistant> " + answer);
+                        if (streaming) {
+                            agent.run(command.payload(), true);
+                        } else {
+                            String answer = agent.run(command.payload());
+                            System.out.println("assistant> " + answer);
+                        }
                     } catch (IOException e) {
                         System.err.println("❌ 调用失败: " + e.getMessage());
                     }
@@ -145,12 +155,16 @@ public class Main {
     }
 
     //单次对话
-    private static void runOnce(Agent agent, String userInput) {
+    private static void runOnce(Agent agent, String userInput, boolean streaming) {
         System.out.println("you> " + userInput);
 
         try {
-            String answer = agent.run(userInput);
-            System.out.println("assistant> " + answer);
+            if (streaming) {
+                agent.run(userInput, true);
+            } else {
+                String answer = agent.run(userInput);
+                System.out.println("assistant> " + answer);
+            }
         } catch (IOException e) {
             System.err.println("❌ 调用失败: " + e.getMessage());
             System.exit(2);

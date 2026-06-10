@@ -5,10 +5,12 @@ import com.cliagent.llm.LlmClient.ChatResponse;
 import com.cliagent.llm.LlmClient.Message;
 import com.cliagent.llm.LlmClient.Tool;
 import com.cliagent.llm.LlmClient.ToolCall;
+import com.cliagent.llm.StreamListener;
 import com.cliagent.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -143,6 +145,18 @@ class AgentTest {
         assertEquals("assistant", history.get(4).role());
     }
 
+    @Test
+    void runStreamingUsesStreamingChat() throws IOException {
+        StreamingLlm llm = new StreamingLlm();
+        Agent agent = new Agent(llm, new ToolRegistry());
+
+        String answer = agent.run("你好", true);
+
+        assertEquals("Hello", answer);
+        assertTrue(llm.streamingChatUsed);
+        assertEquals(List.of("He", "llo"), llm.contentDeltas);
+    }
+
     /** 根据 history 里是否出现过「小明」决定能否回答名字 */
     private static final class MemoryCheckLlm implements LlmClient {
         @Override
@@ -177,6 +191,33 @@ class AgentTest {
         @Override
         public String getModelName() {
             return "stub-single";
+        }
+    }
+
+    /** 流式：三参数 chat 逐 delta 回调 */
+    private static final class StreamingLlm implements LlmClient {
+        private boolean streamingChatUsed;
+        private final List<String> contentDeltas = new ArrayList<>();
+
+        @Override
+        public ChatResponse chat(List<Message> messages, List<Tool> tools) {
+            return new ChatResponse("assistant", "Hello", List.of(), 1, 1);
+        }
+
+        @Override
+        public ChatResponse chat(List<Message> messages, List<Tool> tools, StreamListener listener)
+                throws IOException {
+            streamingChatUsed = true;
+            listener.onContentDelta("He");
+            contentDeltas.add("He");
+            listener.onContentDelta("llo");
+            contentDeltas.add("llo");
+            return new ChatResponse("assistant", "Hello", List.of(), 1, 1);
+        }
+
+        @Override
+        public String getModelName() {
+            return "stub-stream";
         }
     }
 
