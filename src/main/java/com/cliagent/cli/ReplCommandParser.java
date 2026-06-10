@@ -10,6 +10,7 @@ public final class ReplCommandParser {
         EXIT,//退出
         CLEAR,//清空对话历史
         HELP,//显示帮助
+        CONTEXT,//查看上下文状态
         UNKNOWN//未知命令
     }
 
@@ -51,6 +52,9 @@ public final class ReplCommandParser {
         if (isHelp(trimmed)) {
             return new ParsedCommand(CommandType.HELP, null);
         }
+        if (isContext(trimmed)) {
+            return new ParsedCommand(CommandType.CONTEXT, null);
+        }
         if (trimmed.startsWith("/")) {
             return new ParsedCommand(CommandType.UNKNOWN, trimmed);
         }
@@ -64,6 +68,7 @@ public final class ReplCommandParser {
                   exit, quit, /exit, /quit   退出程序
                   clear, /clear              清空对话历史（保留 system）
                   help, /help                显示此帮助
+                  context, /context          查看 history 与 token 统计
                   其他输入                   发送给 Agent（进入 ReAct 循环）
                 """;
     }
@@ -83,6 +88,11 @@ public final class ReplCommandParser {
     private static boolean isHelp(String trimmed) {
         return equalsIgnoreCase(trimmed, "help")
                 || equalsIgnoreCase(trimmed, "/help");
+    }
+
+    private static boolean isContext(String trimmed) {
+        return equalsIgnoreCase(trimmed, "context")
+                || equalsIgnoreCase(trimmed, "/context");
     }
 
     private static boolean equalsIgnoreCase(String value, String expected) {

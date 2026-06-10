@@ -32,6 +32,14 @@ class ReplCommandParserTest {
     }
 
     @Test
+    void parsesContextCommands() {
+        assertEquals(ReplCommandParser.CommandType.CONTEXT, ReplCommandParser.parse("context").type());
+        assertEquals(ReplCommandParser.CommandType.CONTEXT, ReplCommandParser.parse("/context").type());
+        assertEquals(ReplCommandParser.CommandType.CONTEXT, ReplCommandParser.parse("  /CONTEXT  ").type());
+        assertNull(ReplCommandParser.parse("/context").payload());
+    }
+
+    @Test
     void parsesUnknownSlashCommands() {
         ReplCommandParser.ParsedCommand command = ReplCommandParser.parse("/foo");
 
@@ -68,6 +76,7 @@ class ReplCommandParserTest {
         assertTrue(help.contains("exit"));
         assertTrue(help.contains("/clear"));
         assertTrue(help.contains("/help"));
+        assertTrue(help.contains("/context"));
         assertNull(ReplCommandParser.parse("/help").payload());
     }
 }

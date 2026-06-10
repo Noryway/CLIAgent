@@ -37,8 +37,9 @@
 | Day 5 | ✅ | `AgentBudget` 停滞检测 + 硬轮数兜底 | `feat: Day 5 — AgentBudget...` |
 | Day 6 | ✅ | `PathGuard` + `CommandGuard` 策略围栏 | `feat: Day 6 — PathGuard...` |
 | Day 7 | ✅ | `ReplCommandParser` 斜杠命令 | `feat: Day 7 — ReplCommandParser` |
+| Day 8 | ✅ | Token 累计 + `/context` | `feat: Day 8 — token tracking...` |
 
-### 当前架构（Day 5）
+### 当前架构（Day 8）
 
 ```text
 Main
@@ -46,10 +47,12 @@ Main
   ├─ 有参数 → runOnce()：单次对话
   ├─ EnvConfig（-D > env > .env）
   ├─ ToolRegistry（5 内置工具）
+  ├─ ReplCommandParser（exit/clear/help/context）
   └─ Agent
-        ├─ history（跨 run 共享）
+        ├─ history + token 统计（跨 run 共享）
         ├─ ReAct while + AgentBudget（硬轮数 10 + 停滞窗口 3）
-        └─ clearHistory()（只保留 system）
+        ├─ getContextStatus()（/context）
+        └─ clearHistory()（只保留 system，token 归零）
 ```
 
 ### 已知缺口（对比 paicli，阶段 2 要补）
@@ -57,7 +60,7 @@ Main
 - [x] 停滞检测（连续相同 tool+args 死循环）
 - [x] PathGuard / CommandGuard（工具安全围栏）
 - [x] 命令解析器（`/` 未知命令不发给 LLM）
-- [ ] Token 统计与 `/context` 可观测
+- [x] Token 统计与 `/context` 可观测
 - [ ] 流式 SSE 输出
 - [ ] 长期记忆 / Plan / RAG（阶段 3 选一个）
 
@@ -73,7 +76,7 @@ Main
 | Day 5 | ✅ AgentBudget 停滞检测 | `agent/AgentBudget.java` | 连续 3 次相同工具调用自动停止 |
 | Day 6 | ✅ 策略围栏 | `policy/PathGuard.java`、`policy/CommandGuard.java` | 读写/命令限制在项目沙箱内 |
 | Day 7 | ✅ ReplCommandParser | `cli/ReplCommandParser.java` | `/help`、`/exit`、未知 `/` 命令本地处理 |
-| Day 8 | Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
+| Day 8 | ✅ Token 统计 + `/context` | `Agent` 增强 | 看 history 条数、token 用量 |
 | Day 9 | projectPath 显式化 | `ToolRegistry` 增强 | 指定工作目录，配合 PathGuard |
 | Day 10 | 流式 SSE（可选） | `DeepSeekClient` 增强 | `assistant>` 逐字输出 |
 
@@ -330,11 +333,11 @@ public String getContextStatus() {
 
 ### 任务清单
 
-- [ ] 每轮 `chat()` 后从 `ChatResponse` 累加 token
-- [ ] `ReplCommandParser` 增加 `CONTEXT`
-- [ ] `/context` 打印 `agent.getContextStatus()`
-- [ ] `clearHistory()` 时 token 是否重置——建议**重置**（新会话统计从零开始）
-- [ ] `mvn test` 全绿
+- [x] 每轮 `chat()` 后从 `ChatResponse` 累加 token
+- [x] `ReplCommandParser` 增加 `CONTEXT`
+- [x] `/context` 打印 `agent.getContextStatus()`
+- [x] `clearHistory()` 时 token 重置（新会话统计从零开始）
+- [x] `mvn test` 全绿
 
 ### 验收标准
 
@@ -582,4 +585,4 @@ rag/
 
 ---
 
-*文档版本：2026-06-09 · Day 7 完成态 · 阶段 2 进行中（下一步 Day 8）*
+*文档版本：2026-06-10 · Day 8 完成态 · 阶段 2 进行中（下一步 Day 9）*

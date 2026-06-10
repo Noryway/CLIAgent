@@ -21,6 +21,8 @@ public class Agent {
     private final LlmClient llm;
     private final ToolRegistry registry;
     private final List<Message> history = new ArrayList<>();
+    private int totalInputTokens;
+    private int totalOutputTokens;
 
     public Agent(LlmClient llm, ToolRegistry registry) {
         this.llm = llm;
@@ -43,6 +45,7 @@ public class Agent {
 
             budget.beginIteration();
             ChatResponse response = llm.chat(history, registry.getToolDefinitions());
+            recordTokens(response);
 
             //如果响应有工具调用，则执行工具
             if (response.hasToolCalls()) {
@@ -74,11 +77,30 @@ public class Agent {
         System.out.printf("  [tool] %s → %s%n", toolName, preview);
     }
 
-    /** 清空对话历史，保留 system 消息。 */
+    /** 返回当前会话上下文状态（history 条数、累计 token、模型名）。 */
+    public String getContextStatus() {
+        return String.format(
+                "history: %d 条 | token: in=%d out=%d total=%d | 模型: %s",
+                history.size(),
+                totalInputTokens,
+                totalOutputTokens,
+                totalInputTokens + totalOutputTokens,
+                llm.getModelName()
+        );
+    }
+
+    /** 清空对话历史，保留 system 消息；token 统计一并重置。 */
     public void clearHistory() {
         Message systemMsg = history.get(0);
         history.clear();
         history.add(systemMsg);
+        totalInputTokens = 0;
+        totalOutputTokens = 0;
+    }
+
+    private void recordTokens(ChatResponse response) {
+        totalInputTokens += Math.max(0, response.inputTokens());
+        totalOutputTokens += Math.max(0, response.outputTokens());
     }
 
     /** 供测试或调试查看当前 history */

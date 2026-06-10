@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 /**
- * Day 7：REPL 多轮对话 + {@link ReplCommandParser}；有命令行参数时保持单次模式。
+ * Day 8：REPL 多轮对话 + {@link ReplCommandParser}（含 /context）；有命令行参数时保持单次模式。
  *
  * <p>用法：
  * <pre>
@@ -71,6 +71,7 @@ public class Main {
                     System.out.println("🗑️ 对话历史已清空。");
                 }
                 case HELP -> printReplHelp();
+                case CONTEXT -> System.out.println(agent.getContextStatus());
                 case UNKNOWN -> {
                     System.out.println("❌ 未知命令: " + command.payload());
                     printReplHelp();

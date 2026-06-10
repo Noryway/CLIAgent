@@ -72,6 +72,53 @@ class AgentTest {
     }
 
     @Test
+    void accumulatesTokensAfterRun() throws IOException {
+        Agent agent = new Agent(new SingleReplyLlm("你好"), new ToolRegistry());
+        agent.run("你好");
+
+        assertEquals(
+                "history: 3 条 | token: in=10 out=5 total=15 | 模型: stub-single",
+                agent.getContextStatus()
+        );
+    }
+
+    @Test
+    void accumulatesTokensAcrossMultipleRuns() throws IOException {
+        Agent agent = new Agent(new SingleReplyLlm("回复"), new ToolRegistry());
+        agent.run("第一轮");
+        agent.run("第二轮");
+
+        assertEquals(
+                "history: 5 条 | token: in=20 out=10 total=30 | 模型: stub-single",
+                agent.getContextStatus()
+        );
+    }
+
+    @Test
+    void clearHistoryResetsTokenCounters() throws IOException {
+        Agent agent = new Agent(new SingleReplyLlm("你好"), new ToolRegistry());
+        agent.run("你好");
+        agent.clearHistory();
+
+        assertEquals(1, agent.getHistory().size());
+        assertEquals(
+                "history: 1 条 | token: in=0 out=0 total=0 | 模型: stub-single",
+                agent.getContextStatus()
+        );
+    }
+
+    @Test
+    void reactLoopAccumulatesTokensFromMultipleChatCalls() throws IOException {
+        Agent agent = new Agent(new TwoRoundLlm(), new ToolRegistry());
+        agent.run("列出当前目录");
+
+        assertEquals(
+                "history: 5 条 | token: in=30 out=13 total=43 | 模型: stub-react",
+                agent.getContextStatus()
+        );
+    }
+
+    @Test
     void stagnationStopsRepeatedIdenticalToolCalls() throws IOException {
         Agent agent = new Agent(new RepeatedToolLlm(), new ToolRegistry());
         String answer = agent.run("一直列出当前目录");
